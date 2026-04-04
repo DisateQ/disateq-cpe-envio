@@ -167,3 +167,80 @@ def verificar_rutas(ruta_data: str) -> tuple[bool, str]:
     if faltantes:
         return False, f"Archivos no encontrados: {', '.join(faltantes)}"
     return True, "OK"
+
+
+def marcar_enviado_dbf(ruta_data: str, tipo: str, serie: str, numero: str) -> bool:
+    """
+    Actualiza FLAG_ENVIO = 3 en enviosffee.dbf para el comprobante indicado.
+    Retorna True si se actualizó correctamente, False si hubo error.
+
+    FLAG_ENVIO:
+      2 = pendiente (lo lee CPE DisateQ)
+      3 = enviado   (lo marca CPE DisateQ tras envio exitoso)
+    """
+    import dbf as _dbf
+    ruta = str(Path(ruta_data) / "enviosffee.dbf")
+    try:
+        tabla = _dbf.Table(ruta, codepage='cp1252')
+        tabla.open(_dbf.READ_WRITE)
+        try:
+            for registro in tabla:
+                r_tipo   = str(registro.TIPO_FACTU).strip()
+                r_serie  = str(registro.SERIE_FACT).strip()
+                r_numero = str(registro.NUMERO_FAC).strip()
+                r_flag   = registro.FLAG_ENVIO
+
+                if r_tipo == tipo and r_serie == serie and r_numero == numero and r_flag == 2:
+                    _dbf.write(registro, FLAG_ENVIO=3)
+                    return True
+        finally:
+            tabla.close()
+    except Exception as e:
+        log.warning(f"No se pudo actualizar FLAG_ENVIO en DBF: {e}")
+    return False
+
+
+def inspeccionar_flag_envio(ruta_data: str) -> dict:
+    """
+    Lee enviosffee.dbf y retorna un resumen de los valores de FLAG_ENVIO
+    encontrados, para verificar que valor usa FoxPro para 'ya enviado'.
+
+    Retorna dict con:
+      {
+        "valores": {0: 5, 1: 120, 2: 8, 3: 2},  # valor: cantidad de registros
+        "muestra_no_pendientes": [               # muestra de registros con FLAG != 2
+          {"tipo": "B", "serie": "001", "numero": "23168", "flag": 1},
+          ...
+        ]
+      }
+    """
+    try:
+        registros = _leer(ruta_data, "enviosffee.dbf")
+    except Exception as e:
+        return {"error": str(e), "valores": {}, "muestra_no_pendientes": []}
+
+    from collections import Counter
+    flags = Counter()
+    muestra = []
+
+    for r in registros:
+        flag = r.get("FLAG_ENVIO")
+        try:
+            flag_int = int(flag) if flag is not None else -1
+        except Exception:
+            flag_int = -1
+        flags[flag_int] += 1
+
+        # Guardar muestra de los que NO son pendientes (flag != 2)
+        if flag_int != 2 and len(muestra) < 10:
+            muestra.append({
+                "tipo":   str(r.get("TIPO_FACTU", "")).strip(),
+                "serie":  str(r.get("SERIE_FACT",  "")).strip(),
+                "numero": str(r.get("NUMERO_FAC",  "")).strip(),
+                "flag":   flag_int,
+            })
+
+    return {
+        "valores": dict(flags),
+        "muestra_no_pendientes": muestra,
+    }

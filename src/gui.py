@@ -81,17 +81,17 @@ def iniciar_gui(cfg, monitor_cls, report_fn):
     emp_bar.pack(fill="x")
     fr_emp = tk.Frame(emp_bar, bg=C_WHITE)
     fr_emp.pack(side="left", padx=14, pady=8)
-    tk.Label(fr_emp, text=razon_social.upper(),
+    # Nombre comercial como titulo principal si existe, sino razon social
+    nombre_display = nombre_comercial.upper() if nombre_comercial else razon_social.upper()
+    tk.Label(fr_emp, text=nombre_display,
              font=("Segoe UI", 12, "bold"), bg=C_WHITE, fg=C_HEADER).pack(anchor="w")
+    # Si hay nombre comercial, mostrar razon social debajo en gris pequeño
+    if nombre_comercial:
+        tk.Label(fr_emp, text=razon_social.upper(),
+                 font=("Segoe UI", 8), bg=C_WHITE, fg=C_GRIS).pack(anchor="w")
     tk.Label(fr_emp, text=f"RUC {ruc}  \u00b7  Serie {serie}  \u00b7  {lbl_modalidad}",
              font=("Segoe UI", 9), bg=C_WHITE, fg=C_GRIS).pack(anchor="w")
-    # Endpoint activo
-    fr_ep = tk.Frame(emp_bar, bg=C_WHITE)
-    fr_ep.pack(side="right", padx=14, pady=8)
-    tk.Label(fr_ep, text="Endpoint activo:",
-             font=("Segoe UI", 8), bg=C_WHITE, fg=C_GRIS).pack(anchor="e")
-    tk.Label(fr_ep, text=url_envio,
-             font=("Segoe UI", 7), bg=C_WHITE, fg="#546e7a").pack(anchor="e")
+
 
     # ── Contadores ──
     fr_stats = tk.Frame(root, bg=C_BG)
@@ -178,80 +178,178 @@ def iniciar_gui(cfg, monitor_cls, report_fn):
         subprocess.Popen(f'explorer "{ruta}"')
 
     def simular():
-        agregar_log("[SIMULACION] Procesando DBF sin enviar...", "warn")
-        threading.Thread(target=_run_simulacion, daemon=True).start()
+        """Abre ventana separada de verificacion — no toca el log principal."""
+        import queue as _queue
+        from tkinter import scrolledtext as _st
 
-    def _run_simulacion():
-        try:
-            import json as _json
-            from dbf_reader import leer_pendientes, leer_productos, leer_detalles, verificar_rutas
-            from normalizer import normalizar
-            from txt_generator import generar_txt
-            from json_generator import generar_json
+        win_ver = tk.Toplevel(root)
+        win_ver.title("Verificar Base \u2014 CPE DisateQ\u2122")
+        win_ver.geometry("900x540")
+        win_ver.minsize(800, 420)
+        win_ver.configure(bg="#1e1e1e")
+        win_ver.focus_set()
 
-            ruta_data = cfg.get("RUTAS", "data_dbf")
-            ok, msg_v = verificar_rutas(ruta_data)
-            if not ok:
-                gui_queue.put({"tipo": "log", "msg": f"[SIMULACION] ERROR: {msg_v}", "tag": "error"})
-                return
+        # Header
+        hdr_v = tk.Frame(win_ver, bg=C_HEADER)
+        hdr_v.pack(fill="x")
+        tk.Label(hdr_v, text="  Verificar Base  \u2014  Lectura DBF sin enviar a APIFAS",
+                 font=("Segoe UI", 11, "bold"), bg=C_HEADER, fg="white",
+                 pady=9).pack(side="left")
+        lbl_estado = tk.Label(hdr_v, text="Procesando...",
+                              font=("Segoe UI", 9), bg=C_HEADER, fg="#90b8d8")
+        lbl_estado.pack(side="right", padx=14)
 
-            pendientes = leer_pendientes(ruta_data)
-            if not pendientes:
-                gui_queue.put({"tipo": "log",
-                               "msg": "[SIMULACION] No hay comprobantes pendientes.", "tag": "warn"})
-                return
+        # Log
+        log_v = _st.ScrolledText(
+            win_ver, font=("Consolas", 9),
+            bg="#1e1e1e", fg="#d4d4d4",
+            wrap="none", state="disabled", relief="flat")
+        log_v.pack(fill="both", expand=True, padx=4, pady=4)
+        log_v.tag_config("ok",    foreground="#4ec9b0")
+        log_v.tag_config("error", foreground="#f48771")
+        log_v.tag_config("info",  foreground="#9cdcfe")
+        log_v.tag_config("warn",  foreground="#dcdcaa")
 
-            productos = leer_productos(ruta_data)
-            detalles  = leer_detalles(ruta_data, productos)
-            modo      = cfg.get("ENVIO", "modo", fallback="legacy")
-            ruc_e     = cfg.get("EMPRESA", "ruc")
-            rs        = cfg.get("EMPRESA", "razon_social")
+        # Barra inferior
+        fr_bot_v = tk.Frame(win_ver, bg="#0f2d47", pady=8)
+        fr_bot_v.pack(fill="x", side="bottom")
+        tk.Button(fr_bot_v, text="Cerrar", command=win_ver.destroy,
+                  font=("Segoe UI", 10), bg=C_GRIS, fg="white",
+                  relief="flat", padx=16, pady=5,
+                  cursor="hand2", bd=0).pack(side="right", padx=12)
+        lbl_resumen_v = tk.Label(fr_bot_v, text="",
+                                 font=("Segoe UI", 9), bg="#0f2d47", fg="#90b8d8")
+        lbl_resumen_v.pack(side="left", padx=12)
 
-            gui_queue.put({"tipo": "log",
-                           "msg": f"[SIMULACION] {len(pendientes)} comprobante(s) encontrados:", "tag": "warn"})
+        q_ver = _queue.Queue()
 
-            for envio in pendientes:
-                tipo  = str(envio["TIPO_FACTU"]).strip()
-                serie = str(envio["SERIE_FACT"]).strip().zfill(3)
-                num   = str(envio["NUMERO_FAC"]).strip()
-                items = detalles.get((tipo, serie, num), [])
+        def _escribir_v(msg, tag="info"):
+            from datetime import datetime as _dt
+            ts = _dt.now().strftime("%H:%M:%S")
+            log_v.config(state="normal")
+            log_v.insert("end", f"[{ts}]  {msg}\n", tag)
+            log_v.see("end")
+            log_v.config(state="disabled")
 
-                if not items:
-                    gui_queue.put({"tipo": "log",
-                                   "msg": f"  \u26a0 {tipo}{serie}-{num.zfill(8)} \u2014 sin detalle en DBF",
-                                   "tag": "warn"})
-                    continue
+        def _poll():
+            try:
+                while True:
+                    m = q_ver.get_nowait()
+                    if m.get("tipo") == "log":
+                        _escribir_v(m["msg"], m.get("tag", "info"))
+            except _queue.Empty:
+                pass
+            if win_ver.winfo_exists():
+                win_ver.after(80, _poll)
+        _poll()
 
-                comp     = normalizar(envio, items)
-                total    = float(comp["totales"]["total"])
-                n_items  = len(comp["items"])
-                cpe_tipo = "FACTURA" if tipo == "F" else "BOLETA"
+        def _run_ver():
+            from simulacion import SimulacionService
+            SimulacionService(cfg, q_ver).ejecutar()
+            if win_ver.winfo_exists():
+                contenido = log_v.get("1.0", "end")
+                ok_n  = contenido.count("  \u2713 ")
+                err_n = contenido.count("  \u26a0 ") + contenido.count("  \u2717 ")
+                lbl_estado.config(text="Completado")
+                lbl_resumen_v.config(
+                    text=f"Resultado:  {ok_n} comprobante(s) OK  |  {err_n} con problema(s)")
 
-                if modo == "legacy":
-                    nombre, _ = generar_txt(comp, ruc_e, rs)
-                    preview   = (f"gravada={float(comp['totales']['gravada']):.2f}"
-                                 f"  igv={float(comp['totales']['igv']):.2f}"
-                                 f"  exonerada={float(comp['totales']['exonerada']):.2f}")
-                else:
-                    nombre, payload = generar_json(comp, ruc_e, rs)
-                    preview = _json.dumps(payload["totales"])
+        threading.Thread(target=_run_ver, daemon=True).start()
 
-                gui_queue.put({"tipo": "log",
-                               "msg": f"  \u2713 [{cpe_tipo}] {nombre}  S/ {total:.2f}  |  {n_items} item(s)  |  {preview}",
-                               "tag": "ok"})
+    def salir():
+        monitor.detener()
+        root.destroy()
 
-            gui_queue.put({"tipo": "log",
-                           "msg": "[SIMULACION] Fin. Ningun dato fue enviado a la API.",
-                           "tag": "warn"})
-        except Exception as e:
-            gui_queue.put({"tipo": "log", "msg": f"[SIMULACION] Error: {e}", "tag": "error"})
+    def abrir_info():
+        _abrir_ventana_info()
 
-    mk_btn(fr_btns, "Enviar ahora",     enviar_ahora,                    C_AZUL)
-    mk_btn(fr_btns, "Reenviar errores", reenviar_errores,                C_NARANJA)
-    mk_btn(fr_btns, "Ver reporte",      ver_reporte,                     C_GRIS)
-    mk_btn(fr_btns, "Abrir enviados",   lambda: abrir_carpeta("enviados"), C_VERDE)
-    mk_btn(fr_btns, "Abrir errores",    lambda: abrir_carpeta("errores"),  C_ROJO)
-    mk_btn(fr_btns, "Simular",          simular,                         "#6a1b9a")
+    def _abrir_ventana_info():
+        import queue as _queue
+        from tkinter import scrolledtext as _st
+        from status_dia import generar_status
+
+        win_info = tk.Toplevel(root)
+        win_info.title("INFO — Status del día  —  CPE DisateQ™")
+        win_info.geometry("820x560")
+        win_info.minsize(700, 440)
+        win_info.configure(bg="#1e1e1e")
+        win_info.focus_set()
+
+        hdr_i = tk.Frame(win_info, bg=C_HEADER)
+        hdr_i.pack(fill="x")
+        tk.Label(hdr_i, text="  Status del día  —  Comprobantes enviados",
+                 font=("Segoe UI", 11, "bold"), bg=C_HEADER, fg="white",
+                 pady=9).pack(side="left")
+        lbl_est_i = tk.Label(hdr_i, text="Generando...",
+                             font=("Segoe UI", 9), bg=C_HEADER, fg="#90b8d8")
+        lbl_est_i.pack(side="right", padx=14)
+
+        log_i = _st.ScrolledText(
+            win_info, font=("Consolas", 9),
+            bg="#1e1e1e", fg="#d4d4d4",
+            wrap="none", state="disabled", relief="flat")
+        log_i.pack(fill="both", expand=True, padx=4, pady=4)
+        log_i.tag_config("titulo",  foreground="#dcdcaa", font=("Consolas", 9, "bold"))
+        log_i.tag_config("ok",      foreground="#4ec9b0")
+        log_i.tag_config("error",   foreground="#f48771")
+        log_i.tag_config("info",    foreground="#9cdcfe")
+        log_i.tag_config("resumen", foreground="#ce9178")
+
+        fr_bot_i = tk.Frame(win_info, bg="#0f2d47", pady=8)
+        fr_bot_i.pack(fill="x", side="bottom")
+        tk.Button(fr_bot_i, text="Cerrar", command=win_info.destroy,
+                  font=("Segoe UI", 10), bg=C_GRIS, fg="white",
+                  relief="flat", padx=16, pady=5,
+                  cursor="hand2", bd=0).pack(side="right", padx=12)
+        lbl_arch = tk.Label(fr_bot_i, text="",
+                            font=("Segoe UI", 8), bg="#0f2d47", fg="#90b8d8")
+        lbl_arch.pack(side="left", padx=12)
+
+        def _escribir_i(msg, tag="info"):
+            log_i.config(state="normal")
+            log_i.insert("end", msg + "\n", tag)
+            log_i.see("end")
+            log_i.config(state="disabled")
+
+        def _run_info():
+            try:
+                ruc_e = cfg.get("EMPRESA", "ruc")
+                rs    = cfg.get("EMPRESA", "razon_social")
+                nc    = cfg.get("EMPRESA", "nombre_comercial", fallback="")
+                sal   = cfg.get("RUTAS",   "salida_txt")
+                ruta, datos = generar_status(sal, ruc_e, rs, nc)
+                # Mostrar contenido del reporte en el log
+                contenido = ruta.read_text(encoding="utf-8")
+                for linea in contenido.split("\n"):
+                    if linea.startswith("="):
+                        tag = "titulo"
+                    elif linea.startswith("  Serie") or "RESUMEN" in linea or "DETALLE" in linea or "ERROR" in linea:
+                        tag = "resumen"
+                    elif linea.strip().startswith("B0") or linea.strip().startswith("F0"):
+                        tag = "ok"
+                    else:
+                        tag = "info"
+                    _escribir_i(linea, tag)
+
+                if win_info.winfo_exists():
+                    lbl_est_i.config(text="Completado")
+                    lbl_arch.config(text=f"Guardado en: {ruta.name}")
+            except Exception as e:
+                _escribir_i(f"Error generando status: {e}", "error")
+                if win_info.winfo_exists():
+                    lbl_est_i.config(text="Error")
+
+        threading.Thread(target=_run_info, daemon=True).start()
+
+    # Orden de botones: izquierda a derecha
+    mk_btn(fr_btns, "Verificar Envio",    simular,                           "#6a1b9a")
+    mk_btn(fr_btns, "Envio Manual",      enviar_ahora,                      C_AZUL)
+    mk_btn(fr_btns, "Abrir Procesados",  lambda: abrir_carpeta("enviados"),  C_VERDE)
+    mk_btn(fr_btns, "Abrir Errores",     lambda: abrir_carpeta("errores"),   C_ROJO)
+    mk_btn(fr_btns, "Reenviar Errores",  reenviar_errores,                   C_NARANJA)
+    mk_btn(fr_btns, "Correlativos",       ver_reporte,                        C_GRIS)
+    mk_btn(fr_btns, "Reporte Envios",              abrir_info,                         "#00695c")
+    mk_btn(fr_btns, "Salir",             salir,                              "#37474f")
 
     # ── Log en tiempo real ──
     fr_log = tk.Frame(root, bg=C_BG, padx=12)
@@ -291,6 +389,39 @@ def iniciar_gui(cfg, monitor_cls, report_fn):
         lbl_hora.config(text=datetime.now().strftime("%d/%m/%Y  %H:%M:%S"))
         root.after(1000, actualizar_hora)
     actualizar_hora()
+
+    # ── Alerta sin conexion ──
+    _parpadeando    = [False]
+    _parpadeo_id    = [None]
+    _parpadeo_estado = [True]
+
+    def _alertar_sin_conexion():
+        # Sonido del sistema Windows
+        try:
+            import winsound
+            winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+        except Exception:
+            pass
+        # Log visible
+        agregar_log("⚠  SIN CONEXION A APIFAS — Verificar internet", "error")
+        # Iniciar parpadeo si no esta activo
+        if not _parpadeando[0]:
+            _parpadeando[0] = True
+            _parpadear()
+
+    def _parpadear():
+        if not _parpadeando[0]:
+            return
+        _parpadeo_estado[0] = not _parpadeo_estado[0]
+        color = "#d50000" if _parpadeo_estado[0] else C_HEADER
+        lbl_dot.config(fg=color)
+        _parpadeo_id[0] = root.after(600, _parpadear)
+
+    def _detener_parpadeo():
+        _parpadeando[0] = False
+        if _parpadeo_id[0]:
+            root.after_cancel(_parpadeo_id[0])
+            _parpadeo_id[0] = None
 
     # ── Procesador de cola ──
     enviados_hoy_cnt = [0]
@@ -341,4 +472,14 @@ def iniciar_gui(cfg, monitor_cls, report_fn):
         root.destroy()
 
     root.protocol("WM_DELETE_WINDOW", on_close)
+    # Ajustar ventana al contenido al cargar
+    root.update_idletasks()
+    ancho  = max(root.winfo_reqwidth(),  760)
+    alto   = max(root.winfo_reqheight(), 520)
+    # No superar la pantalla
+    sw = root.winfo_screenwidth()
+    sh = root.winfo_screenheight()
+    ancho = min(ancho, sw - 40)
+    alto  = min(alto,  sh - 60)
+    root.geometry(f"{ancho}x{alto}")
     root.mainloop()

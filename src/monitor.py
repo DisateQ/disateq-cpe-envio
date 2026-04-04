@@ -20,7 +20,7 @@ import queue
 from datetime import date
 from pathlib import Path
 
-from dbf_reader   import leer_pendientes, leer_productos, leer_detalles, verificar_rutas
+from dbf_reader   import leer_pendientes, leer_productos, leer_detalles, verificar_rutas, marcar_enviado_dbf
 from normalizer   import normalizar, _safe_str
 from txt_generator import generar_txt, guardar_txt
 from sender       import enviar_txt, enviar_json, verificar_conexion
@@ -179,7 +179,7 @@ class Monitor:
 
     # ── Ciclo principal ──────────────────────────────────────
 
-    def _ciclo(self, forzar_boletas: bool = False):
+    def _ciclo(self, forzar_boletas: bool = False, verbose: bool = False):
         ruta_data = self.cfg.get("RUTAS", "data_dbf")
         salida    = self.cfg.get("RUTAS", "salida_txt")
         url_envio = self.cfg.get("ENVIO", "url_envio")
@@ -234,7 +234,8 @@ class Monitor:
 
         total = len(facturas) + len(boletas)
         if total == 0:
-            self._log("Sin comprobantes pendientes.", "info")
+            if verbose:
+                self._log("Sin comprobantes pendientes.", "info")
             self._emit({"tipo": "contadores", "pendientes": 0})
             return
 
@@ -285,7 +286,7 @@ class Monitor:
 
     def ciclo_manual(self):
         """Boton 'Enviar ahora' — fuerza boletas tambien."""
-        self._ciclo(forzar_boletas=True)
+        self._ciclo(forzar_boletas=True, verbose=True)
 
     def iniciar(self):
         self._log("Monitor iniciado — ciclo automatico activo", "info")

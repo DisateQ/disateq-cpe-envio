@@ -16,6 +16,27 @@ import argparse
 import logging
 from pathlib import Path
 
+# ── Resolver ruta de modulos para PyInstaller ──────────────
+# Cuando se ejecuta como .exe compilado, los modulos estan en
+# la carpeta temporal _MEIPASS/src — hay que agregarlo al path.
+def _setup_path():
+    if getattr(sys, "frozen", False):
+        # Ejecutable compilado con PyInstaller
+        base = Path(sys._MEIPASS)
+        src  = base / "src"
+        if src.exists() and str(src) not in sys.path:
+            sys.path.insert(0, str(src))
+        if str(base) not in sys.path:
+            sys.path.insert(0, str(base))
+    else:
+        # Desarrollo: agregar src/ al path
+        src = Path(__file__).parent
+        if str(src) not in sys.path:
+            sys.path.insert(0, str(src))
+
+_setup_path()
+# ───────────────────────────────────────────────────────────
+
 from config import leer_config, config_completa
 
 

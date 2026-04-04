@@ -6,26 +6,22 @@ Protegido con PIN de 4 digitos.
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import messagebox
 from config import guardar_config, actualizar_endpoints, ENDPOINTS, BASE_DIR
 from correlativo_store import establecer_inicio, _cargar as cs_cargar
-
 
 # PIN maestro DisateQ — solo conocido por el equipo tecnico
 _PIN_MAESTRO = "1947"
 
-# ── Colores ──────────────────────────────────────────────────
+# ── Colores ──
 C_HEADER  = "#1a3a5c"
 C_BG      = "#f0f0f0"
-C_WHITE   = "#ffffff"
 C_GRIS    = "#666666"
 C_BORDER  = "#cccccc"
 C_DISABLE = "#aaaaaa"
 C_AZUL    = "#1565c0"
 C_VERDE   = "#2e7d32"
 
-
-# ── Dialogo PIN ───────────────────────────────────────────────
 
 def pedir_pin(parent, cfg) -> bool:
     pin_guardado = cfg.get("SEGURIDAD", "pin", fallback="").strip()
@@ -74,8 +70,6 @@ def pedir_pin(parent, cfg) -> bool:
     return resultado[0]
 
 
-# ── Wizard principal ──────────────────────────────────────────
-
 def abrir_wizard(parent, cfg, callback=None, primer_arranque=False):
     if not primer_arranque:
         if not pedir_pin(parent, cfg):
@@ -83,8 +77,6 @@ def abrir_wizard(parent, cfg, callback=None, primer_arranque=False):
 
     win = tk.Toplevel(parent)
     win.title("Configuracion \u2014 CPE DisateQ\u2122")
-    win.geometry("580x780")
-    win.minsize(560, 720)
     win.resizable(True, True)
     win.configure(bg=C_BG)
     win.grab_set()
@@ -97,107 +89,96 @@ def abrir_wizard(parent, cfg, callback=None, primer_arranque=False):
              font=("Segoe UI", 13, "bold"), bg=C_HEADER, fg="white",
              pady=11).pack(anchor="w")
 
-    # ── Botones fijos abajo (antes del contenido) ──
+    # ── Botones fijos abajo ──
     fr_btns = tk.Frame(win, bg=C_BG, pady=10)
     fr_btns.pack(fill="x", side="bottom", padx=16)
-    tk.Frame(fr_btns, bg=C_BORDER, height=1).pack(fill="x", pady=(0, 10))
+    tk.Frame(fr_btns, bg=C_BORDER, height=1).pack(fill="x", pady=(0, 8))
 
-    # ── Contenido con grid ──
+    # ── Contenido ──
     fr = tk.Frame(win, bg=C_BG)
-    fr.pack(fill="both", expand=True, padx=20, pady=10)
+    fr.pack(fill="both", expand=True, padx=20, pady=(10, 0))
     fr.columnconfigure(1, weight=1)
 
-    row = [0]  # contador de fila mutable
+    row = [0]
 
     def next_row():
-        r = row[0]
-        row[0] += 1
-        return r
+        r = row[0]; row[0] += 1; return r
 
     def seccion(texto):
         r = next_row()
-        lbl = tk.Label(fr, text=f"  {texto}",
-                       font=("Segoe UI", 9, "bold"),
-                       bg=C_HEADER, fg="white", pady=3, padx=6)
-        lbl.grid(row=r, column=0, columnspan=2,
-                 sticky="ew", pady=(12, 4))
+        tk.Label(fr, text=f"  {texto}",
+                 font=("Segoe UI", 9, "bold"),
+                 bg=C_HEADER, fg="white", pady=3, padx=6).grid(
+                 row=r, column=0, columnspan=2, sticky="ew", pady=(10, 3))
 
     def campo(label, valor_ini, show=""):
         r = next_row()
         tk.Label(fr, text=label, font=("Segoe UI", 10),
                  bg=C_BG, fg=C_GRIS, anchor="w").grid(
-                 row=r, column=0, sticky="w", pady=5, padx=(0, 10))
+                 row=r, column=0, sticky="w", pady=4, padx=(0, 10))
         var = tk.StringVar(value=valor_ini)
-        e = tk.Entry(fr, textvariable=var, font=("Segoe UI", 10),
-                     show=show, relief="solid", bd=1)
-        e.grid(row=r, column=1, sticky="ew", pady=5)
+        tk.Entry(fr, textvariable=var, font=("Segoe UI", 10),
+                 show=show, relief="solid", bd=1).grid(
+                 row=r, column=1, sticky="ew", pady=4)
         return var
 
     def nota(texto):
         r = next_row()
         tk.Label(fr, text=texto, font=("Segoe UI", 8, "italic"),
                  bg=C_BG, fg=C_DISABLE).grid(
-                 row=r, column=1, sticky="w", pady=(0, 4))
-
-    # ══ Empresa ══
-    seccion("Datos de la empresa")
-    v_razon  = campo("Razon social",
-                     cfg.get("EMPRESA", "razon_social",     fallback=""))
-    v_nombre = campo("Nombre comercial",
-                     cfg.get("EMPRESA", "nombre_comercial", fallback=""))
-    nota("Se muestra en la interfaz principal")
-    v_ruc    = campo("RUC",
-                     cfg.get("EMPRESA", "ruc",              fallback=""))
-
-    # ══ Seguridad ══
-    seccion("Seguridad")
-    v_pin = campo("PIN de acceso (4 dig.)",
-                  cfg.get("SEGURIDAD", "pin", fallback=""), show="•")
-    nota("Protege el acceso a esta ventana de configuracion")
-
-    # ══ Series y Correlativos ══
-    seccion("Series y correlativos de inicio")
-
-    r_nota = next_row()
-    tk.Label(fr,
-             text="Ultimo numero YA ENVIADO a SUNAT. Dejar en 0 si es instalacion nueva.",
-             font=("Segoe UI", 8, "italic"), bg=C_BG, fg=C_DISABLE,
-             wraplength=380, justify="left").grid(
-             row=r_nota, column=0, columnspan=2,
-             sticky="w", pady=(0, 6))
-
-    salida_act = cfg.get("RUTAS", "salida_txt", fallback=BASE_DIR)
-    cs = cs_cargar(salida_act)
-
-    def ultimo(serie_key):
-        v = cs.get(serie_key.upper(), {}).get("hasta", 0)
-        return str(v) if v else ""
-
-    serie_b = cfg.get("EMPRESA", "serie_boleta",  fallback="B001").upper()
-    serie_f = cfg.get("EMPRESA", "serie_factura", fallback="F001").upper()
-    serie_n = cfg.get("EMPRESA", "serie_nota",    fallback="NC01").upper()
+                 row=r, column=1, sticky="w", pady=(0, 2))
 
     def fila_serie(tipo_label, serie_ini, corr_ini):
         r = next_row()
         tk.Label(fr, text=tipo_label, font=("Segoe UI", 10),
                  bg=C_BG, fg=C_GRIS, anchor="w").grid(
-                 row=r, column=0, sticky="w", pady=4, padx=(0, 10))
-
-        fr_fila = tk.Frame(fr, bg=C_BG)
-        fr_fila.grid(row=r, column=1, sticky="ew", pady=4)
-
-        tk.Label(fr_fila, text="Serie:", font=("Segoe UI", 9),
+                 row=r, column=0, sticky="w", pady=3, padx=(0, 10))
+        ff = tk.Frame(fr, bg=C_BG)
+        ff.grid(row=r, column=1, sticky="ew", pady=3)
+        tk.Label(ff, text="Serie:", font=("Segoe UI", 9),
                  bg=C_BG, fg=C_GRIS).pack(side="left")
         vs = tk.StringVar(value=serie_ini)
-        tk.Entry(fr_fila, textvariable=vs, font=("Segoe UI", 10),
-                 width=7, relief="solid", bd=1).pack(side="left", padx=(4, 16))
-
-        tk.Label(fr_fila, text="Ultimo enviado:", font=("Segoe UI", 9),
+        tk.Entry(ff, textvariable=vs, font=("Segoe UI", 10),
+                 width=7, relief="solid", bd=1).pack(side="left", padx=(4, 14))
+        tk.Label(ff, text="Ultimo enviado:", font=("Segoe UI", 9),
                  bg=C_BG, fg=C_GRIS).pack(side="left")
         vc = tk.StringVar(value=corr_ini)
-        tk.Entry(fr_fila, textvariable=vc, font=("Segoe UI", 10),
+        tk.Entry(ff, textvariable=vc, font=("Segoe UI", 10),
                  width=10, relief="solid", bd=1).pack(side="left", padx=(4, 0))
         return vs, vc
+
+    # ══ Empresa ══
+    seccion("Datos de la empresa")
+    v_ruc    = campo("RUC",              cfg.get("EMPRESA", "ruc",              fallback=""))
+    v_razon  = campo("Razon social",     cfg.get("EMPRESA", "razon_social",     fallback=""))
+    v_nombre = campo("Nombre comercial", cfg.get("EMPRESA", "nombre_comercial", fallback=""))
+    nota("Se muestra como titulo en la interfaz principal")
+
+    # ══ Seguridad ══
+    seccion("Seguridad")
+    v_pin = campo("PIN de acceso (4 dig.)",
+                  cfg.get("SEGURIDAD", "pin", fallback=""), show="\u2022")
+    nota("Protege el acceso a esta ventana de configuracion")
+
+    # ══ Series y Correlativos ══
+    seccion("Series y correlativos de inicio")
+    r_n = next_row()
+    tk.Label(fr,
+             text="Ultimo numero YA ENVIADO a SUNAT por serie. Dejar en 0 si es instalacion nueva.",
+             font=("Segoe UI", 8, "italic"), bg=C_BG, fg=C_DISABLE,
+             wraplength=360, justify="left").grid(
+             row=r_n, column=0, columnspan=2, sticky="w", pady=(0, 4))
+
+    salida_act = cfg.get("RUTAS", "salida_txt", fallback=BASE_DIR)
+    cs = cs_cargar(salida_act)
+
+    def ultimo(k):
+        v = cs.get(k.upper(), {}).get("hasta", 0)
+        return str(v) if v else ""
+
+    serie_b = cfg.get("EMPRESA", "serie_boleta",  fallback="B001").upper()
+    serie_f = cfg.get("EMPRESA", "serie_factura", fallback="F001").upper()
+    serie_n = cfg.get("EMPRESA", "serie_nota",    fallback="NC01").upper()
 
     v_serie_b, v_corr_b = fila_serie("Boletas",       serie_b, ultimo(serie_b))
     v_serie_f, v_corr_f = fila_serie("Facturas",       serie_f, ultimo(serie_f))
@@ -205,14 +186,12 @@ def abrir_wizard(parent, cfg, callback=None, primer_arranque=False):
 
     # ══ Conexion APIFAS ══
     seccion("Conexion APIFAS")
-
     r_mod = next_row()
     tk.Label(fr, text="Modalidad", font=("Segoe UI", 10),
              bg=C_BG, fg=C_GRIS, anchor="w").grid(
-             row=r_mod, column=0, sticky="w", pady=6, padx=(0, 10))
-
+             row=r_mod, column=0, sticky="w", pady=5, padx=(0, 10))
     fr_mod = tk.Frame(fr, bg=C_BG)
-    fr_mod.grid(row=r_mod, column=1, sticky="w", pady=6)
+    fr_mod.grid(row=r_mod, column=1, sticky="w", pady=5)
     v_modalidad = tk.StringVar(value=cfg.get("ENVIO", "modalidad", fallback="OSE"))
     for val, lbl in [("OSE", "OSE / PSE"), ("SUNAT", "SEE SUNAT")]:
         tk.Radiobutton(fr_mod, text=lbl, variable=v_modalidad, value=val,
@@ -221,8 +200,7 @@ def abrir_wizard(parent, cfg, callback=None, primer_arranque=False):
     r_ep = next_row()
     lbl_ep = tk.Label(fr, text="", font=("Segoe UI", 8, "italic"),
                       bg=C_BG, fg=C_DISABLE)
-    lbl_ep.grid(row=r_ep, column=1, sticky="w", pady=(0, 4))
-
+    lbl_ep.grid(row=r_ep, column=1, sticky="w", pady=(0, 3))
     EP_LABELS = {
         "OSE":   "Envio via OSE / PSE  \u2014  Operador de Servicios Electronicos",
         "SUNAT": "Envio directo SEE SUNAT  \u2014  Factura Electronica SUNAT",
@@ -236,18 +214,28 @@ def abrir_wizard(parent, cfg, callback=None, primer_arranque=False):
     seccion("Generacion de comprobantes")
     r_gen = next_row()
     fr_gen = tk.Frame(fr, bg=C_BG)
-    fr_gen.grid(row=r_gen, column=0, columnspan=2, sticky="w", pady=4)
+    fr_gen.grid(row=r_gen, column=0, columnspan=2, sticky="w", pady=3)
     tk.Label(fr_gen, text="\u2713  Genera TXT \u2192 valida \u2192 envia a APIFAS",
              font=("Segoe UI", 10), bg=C_BG, fg=C_VERDE).pack(anchor="w")
     tk.Label(fr_gen,
              text="\u23f3  Conversion TXT \u2192 JSON para FFEE Platform DisateQ\u2122 (proximamente)",
-             font=("Segoe UI", 8, "italic"), bg=C_BG, fg=C_DISABLE).pack(anchor="w", pady=2)
+             font=("Segoe UI", 8, "italic"), bg=C_BG, fg=C_DISABLE).pack(anchor="w", pady=1)
 
-    # ══ Seguridad ══
-    seccion("Seguridad")
-    v_pin = campo("PIN de acceso (4 dig.)",
-                  cfg.get("SEGURIDAD", "pin", fallback=""), show="\u2022")
-    nota("Protege el acceso a esta ventana de configuracion")
+    # Espaciador final para que nada quede cortado
+    tk.Frame(fr, bg=C_BG, height=8).grid(row=next_row(), column=0, columnspan=2)
+
+    # ── Calcular altura exacta y centrar ──
+    win.update_idletasks()
+    contenido_h = fr.winfo_reqheight()
+    header_h    = hdr.winfo_reqheight()
+    btns_h      = fr_btns.winfo_reqheight()
+    total_h     = contenido_h + header_h + btns_h + 40  # 40px padding
+    ancho       = 580
+    # Limitar a pantalla disponible
+    pantalla_h  = win.winfo_screenheight()
+    alto_final  = min(total_h, pantalla_h - 80)
+    win.geometry(f"{ancho}x{alto_final}")
+    win.minsize(560, min(alto_final, 600))
 
     # ── Guardar ──
     def guardar():
@@ -260,27 +248,24 @@ def abrir_wizard(parent, cfg, callback=None, primer_arranque=False):
             return
         pin = v_pin.get().strip()
         pin_existente = cfg.get("SEGURIDAD", "pin", fallback="").strip()
-        # Si el campo esta vacio pero ya habia PIN configurado, mantener el existente
         if not pin and pin_existente:
             pin = pin_existente
         elif not pin.isdigit() or len(pin) != 4:
             messagebox.showerror("Error", "El PIN debe ser exactamente 4 digitos numericos.", parent=win)
             return
 
-        cfg.set("EMPRESA",  "ruc",              ruc)
-        cfg.set("EMPRESA",  "razon_social",      v_razon.get().strip())
-        cfg.set("EMPRESA",  "nombre_comercial",  v_nombre.get().strip())
-        cfg.set("EMPRESA",  "serie_boleta",      v_serie_b.get().strip().upper() or "B001")
-        cfg.set("EMPRESA",  "serie_factura",     v_serie_f.get().strip().upper() or "F001")
-        cfg.set("EMPRESA",  "serie_nota",        v_serie_n.get().strip().upper() or "NC01")
-        cfg.set("ENVIO",    "modalidad",         v_modalidad.get())
-        cfg.set("ENVIO",    "modo",              "legacy")
-        cfg.set("SEGURIDAD","pin",               pin)
+        cfg.set("EMPRESA",   "ruc",              ruc)
+        cfg.set("EMPRESA",   "razon_social",      v_razon.get().strip())
+        cfg.set("EMPRESA",   "nombre_comercial",  v_nombre.get().strip())
+        cfg.set("EMPRESA",   "serie_boleta",      v_serie_b.get().strip().upper() or "B001")
+        cfg.set("EMPRESA",   "serie_factura",     v_serie_f.get().strip().upper() or "F001")
+        cfg.set("EMPRESA",   "serie_nota",        v_serie_n.get().strip().upper() or "NC01")
+        cfg.set("ENVIO",     "modalidad",         v_modalidad.get())
+        cfg.set("ENVIO",     "modo",              "legacy")
+        cfg.set("SEGURIDAD", "pin",               pin)
 
         salida_w = cfg.get("RUTAS", "salida_txt", fallback=BASE_DIR)
-        for vs, vc in [(v_serie_b, v_corr_b),
-                       (v_serie_f, v_corr_f),
-                       (v_serie_n, v_corr_n)]:
+        for vs, vc in [(v_serie_b, v_corr_b), (v_serie_f, v_corr_f), (v_serie_n, v_corr_n)]:
             try:
                 sw = vs.get().strip().upper()
                 cw = int(vc.get().strip()) if vc.get().strip() else 0

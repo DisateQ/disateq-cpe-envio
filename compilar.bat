@@ -88,8 +88,11 @@ set PKG_DIR=%~dp0dist\CPE_DisateQ_Instalador
 if exist "%PKG_DIR%" rmdir /s /q "%PKG_DIR%"
 mkdir "%PKG_DIR%"
 
-copy /y "dist\cpe_disateq.exe" "%PKG_DIR%\cpe_disateq.exe" >nul
-copy /y "INSTALAR.bat"         "%PKG_DIR%\INSTALAR.bat"     >nul
+copy /y "dist\cpe_disateq.exe"   "%PKG_DIR%\cpe_disateq.exe"   >nul
+copy /y "INSTALAR.bat"           "%PKG_DIR%\INSTALAR.bat"       >nul
+copy /y "DETENER.bat"            "%PKG_DIR%\DETENER.bat"         >nul
+copy /y "DESINSTALAR.bat"        "%PKG_DIR%\DESINSTALAR.bat"     >nul
+if exist "src\cpe_disateq.ico" copy /y "src\cpe_disateq.ico" "%PKG_DIR%\cpe_disateq.ico" >nul
 
 :: Comprimir con PowerShell
 powershell -NoProfile -Command ^

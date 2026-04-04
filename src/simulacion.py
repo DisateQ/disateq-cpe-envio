@@ -48,8 +48,24 @@ class SimulacionService:
         # Verificar rutas
         ok, msg_v = verificar_rutas(ruta_data)
         if not ok:
-            self._emit(f"[SIMULACION] ERROR rutas: {msg_v}", "error")
+            self._emit(f"[VERIFICACION] ERROR rutas: {msg_v}", "error")
             return
+
+        # ── Inspeccion interna del DBF (sin exponer datos sensibles) ──
+        from dbf_reader import inspeccionar_flag_envio
+        self._emit("─" * 60, "info")
+        self._emit("INSPECCION INFORMACION DE ENVIO", "warn")
+        insp = inspeccionar_flag_envio(ruta_data)
+        if "error" in insp:
+            self._emit(f"  ✗ No se pudo leer la base de datos: {insp['error']}", "error")
+        else:
+            valores = insp["valores"]
+            pendientes_n = valores.get(2, 0)
+            procesados_n = sum(v for k, v in valores.items() if k != 2 and k != -1)
+            self._emit(f"  Comprobantes pendientes de envio : {pendientes_n}", "info")
+            self._emit(f"  Comprobantes ya procesados       : {procesados_n}", "ok")
+            self._emit(f"  ✓ Estructura de base de datos verificada correctamente", "ok")
+        self._emit("─" * 60, "info")
 
         # Leer DBF con errores descriptivos
         try:
@@ -57,22 +73,22 @@ class SimulacionService:
             productos  = leer_productos(ruta_data)
             detalles   = leer_detalles(ruta_data, productos)
         except DBFNotFound as e:
-            self._emit(f"[SIMULACION] Archivo no encontrado: {e.archivo}", "error")
+            self._emit(f"[VERIFICACION] Archivo no encontrado: {e.archivo}", "error")
             return
         except DBFCorrupto as e:
             self._emit(
-                f"[SIMULACION] Archivo corrupto: {e.archivo} — {e.causa}", "error")
+                f"[VERIFICACION] Archivo corrupto: {e.archivo} — {e.causa}", "error")
             return
         except DBFError as e:
-            self._emit(f"[SIMULACION] Error DBF: {e}", "error")
+            self._emit(f"[VERIFICACION] Error DBF: {e}", "error")
             return
 
         if not pendientes:
-            self._emit("[SIMULACION] No hay comprobantes pendientes en el DBF.", "warn")
+            self._emit("[VERIFICACION] No hay comprobantes pendientes en el DBF.", "warn")
             return
 
         self._emit(
-            f"[SIMULACION] {len(pendientes)} comprobante(s) encontrado(s) — "
+            f"[VERIFICACION] {len(pendientes)} comprobante(s) encontrado(s) — "
             f"modo: {modo.upper()} — sin enviar a APIFAS", "warn")
 
         ok_count  = 0
@@ -102,7 +118,7 @@ class SimulacionService:
                     grav = float(comp["totales"]["gravada"])
                     exon = float(comp["totales"]["exonerada"])
                     igv  = float(comp["totales"]["igv"])
-                    preview = f"gravada={grav:.2f}  igv={igv:.2f}  exonerada={exon:.2f}"
+                    preview = f"grav={grav:.2f} igv={igv:.2f} exon={exon:.2f}"
                 else:
                     nombre, payload = generar_json(comp, ruc, rs)
                     preview = json.dumps(payload["totales"])
@@ -119,5 +135,5 @@ class SimulacionService:
                 err_count += 1
 
         self._emit(
-            f"[SIMULACION] Fin — {ok_count} OK / {err_count} con problemas — "
+            f"[VERIFICACION] Fin — {ok_count} OK / {err_count} con problemas — "
             f"Ningun dato fue enviado a APIFAS.", "warn")
