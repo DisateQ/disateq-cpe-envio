@@ -1,0 +1,98 @@
+# ============================================================
+# DISATEQ Standard v1 — GitHub Actions
+# Proyecto: ffee-farmacia
+# ============================================================
+
+name: DISATEQ Standard Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+
+  check-uuid:
+    name: Verificar UUID en migraciones
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Buscar tablas sin UUID
+        run: |
+          echo "Verificando UUID en migraciones..."
+          FAILED=0
+          for f in $(find . -path ./.standards -prune -o -name "*.sql" -print); do
+            if grep -i "CREATE TABLE" "$f" > /dev/null 2>&1; then
+              if ! grep -iE "uuid|TEXT PRIMARY KEY" "$f" > /dev/null 2>&1; then
+                echo "ERROR: $f crea tabla sin UUID"
+                FAILED=1
+              fi
+            fi
+          done
+          if [ $FAILED -eq 1 ]; then
+            echo "FALLO: tablas sin UUID detectadas"
+            exit 1
+          fi
+          echo "OK: todas las tablas tienen UUID"
+
+  check-credentials:
+    name: Verificar credenciales hardcodeadas
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Buscar credenciales hardcodeadas
+        run: |
+          echo "Verificando credenciales..."
+          if grep -rn \
+            -e "password\s*=\s*['\"][^'\"]\{4,\}" \
+            -e "secret\s*=\s*['\"][^'\"]\{4,\}" \
+            -e "api_key\s*=\s*['\"][^'\"]\{4,\}" \
+            --include="*.php" \
+            --include="*.py" \
+            --include="*.js" \
+            --include="*.ts" \
+            . 2>/dev/null; then
+            echo "FALLO: credencial hardcodeada detectada"
+            exit 1
+          fi
+          echo "OK: sin credenciales hardcodeadas"
+
+  check-outbox:
+    name: Verificar outbox_events
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verificar outbox_events en migraciones
+        run: |
+          echo "Verificando outbox_events..."
+          if ! find . -path ./.standards -prune -o -name "*.sql" -print \
+            | xargs grep -l "outbox_events" 2>/dev/null | grep -q .; then
+            echo "ADVERTENCIA: no se encontró outbox_events en migraciones"
+          else
+            echo "OK: outbox_events encontrado"
+          fi
+
+  check-empresa-id:
+    name: Verificar empresa_id en migraciones
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verificar empresa_id en tablas
+        run: |
+          echo "Verificando empresa_id..."
+          EXCLUIDAS="outbox_events|audit_log|empresas|schema_migrations"
+          for f in $(find . -path ./.standards -prune -o -name "*.sql" -print); do
+            TABLAS=$(grep -i "CREATE TABLE" "$f" | \
+              grep -iEv "$EXCLUIDAS" || true)
+            if [ -n "$TABLAS" ]; then
+              if ! grep -q "empresa_id" "$f"; then
+                echo "ADVERTENCIA: $f puede tener tabla sin empresa_id"
+              fi
+            fi
+          done
+          echo "OK: verificación empresa_id completada"
