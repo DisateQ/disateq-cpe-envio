@@ -1,50 +1,65 @@
-# CLAUDE.md — FFEE Farmacia
+# CLAUDE.md — DisateQ Bridge™
 
-Proyecto: Sistema de gestión para farmacias — cliente
-del FFEE Platform. Módulo de punto de venta, stock
-e integración con la plataforma CPE.
+Proyecto: DisateQ Bridge™ — Motor de integración para facturación electrónica.
+Conecta cualquier sistema legacy (FoxPro, ERP, Excel, SQL) con SUNAT
+vía APIFAS, sin necesidad de migrar o reemplazar el sistema existente.
 Organización: DISATEQ
+
+## Ecosistema DisateQ
+
+| Componente             | Rol                                      |
+|------------------------|------------------------------------------|
+| DisateQ Bridge™        | Motor local de integración (este repo)   |
+| BridgeAPI              | API local FastAPI (supervisión/dashboard)|
+| DisateQ Plataforma CPE | Plataforma web central DisateQ           |
 
 ## Estándar base
 
 Sigue todas las reglas de `.standards/CLAUDE.md` sin excepción.
 El estándar completo está en `.standards/STANDARD.md`.
 
-## Reglas específicas de FFEE Farmacia
+## Reglas específicas de DisateQ Bridge™
+
+### Principio rector
+El ejecutable nunca se rompe. Cada cambio es aditivo.
+El motor principal (readers → normalizer → txt_generator → sender)
+no se modifica sin tests previos que confirmen comportamiento idéntico.
+
+### Fuentes de datos (readers/)
+- Interfaz abstracta `BaseReader` en `src/readers/base.py`
+- Implementaciones: `dbf_reader.py`, `excel_reader.py`, `sql_reader.py`
+- El motor NO sabe ni le importa el origen de los datos
+- Primer cliente implementado: sistema farmacia FoxPro (DBF)
 
 ### Base de datos local (SQLite)
-- Usar SQLite para operación offline en el POS
-- UUID generado en la aplicación como TEXT
-- Toda tabla incluye: `empresa_id`, `local_id`, `nodo_id`
-- Sincronización con servidor via `outbox_events`
+- SQLite en `D:\DisateQ\Bridge\bridge.db`
+- Toda tabla incluye: `empresa_id` (multiempresa futuro)
+- Sincronización con DisateQ Plataforma CPE via `txt_to_json.py`
 
-### Ventas y comprobantes
-- Toda venta genera un UUID interno antes de enviarse
-- El correlativo (serie-número) se genera localmente
-- Si hay conexión: enviar inmediatamente al FFEE Platform
-- Si no hay conexión: guardar en outbox local, enviar después
-- Nunca bloquear la venta por falta de conexión
+### Comprobantes y envío
+- Toda operación crítica es offline-first
+- Nunca bloquear el flujo por falta de conexión
+- TXT se guarda localmente antes de intentar enviar
+- Si sin conexión: guardar en `enviados/` pendiente, reintentar automático
 
-### Stock
-- Fuente de verdad: servidor local FFEE Platform
-- Descuento de stock: inmediato en local, reconciliación posterior
-- Permitir stock negativo con registro de advertencia
-
-### Sincronización
-- Outbox local para todas las operaciones críticas
-- Reintentos automáticos cada 5 minutos
-- Conflictos resueltos por timestamp del servidor
-
-### Stack tecnológico
-- Backend: PHP 8.x
-- Base de datos local: SQLite
-- Base de datos servidor: PostgreSQL (via FFEE Platform)
-- Interfaz: adaptada para pantalla táctil y teclado
+### Rutas en producción
+- Directorio base: `D:\DisateQ\Bridge\`
+- Config: `D:\DisateQ\Bridge\bridge_config.ini`
+- Log: `D:\DisateQ\Bridge\bridge.log`
+- Salida TXT: `D:\DisateQ\Bridge\enviados\`
 
 ### Nomenclatura
-- Usar snake_case en español
-- Ejemplos: `ventas`, `items_venta`, `productos`,
-  `clientes`, `movimientos_stock`
+- Variables y funciones: snake_case en español
+- Clases: PascalCase
+- No usar nunca: "FFEE Platform", "CPE DisateQ", "ffee_farmacia" como nombre de producto
+
+### Nombres de producto (SIEMPRE usar estos)
+- Motor:         DisateQ Bridge™
+- API local:     BridgeAPI
+- Plataforma:    DisateQ Plataforma CPE
+- Ejecutable:    DisateQBridge.exe
+- Config:        bridge_config.ini
+- Log:           bridge.log
 
 ## Repositorio
 

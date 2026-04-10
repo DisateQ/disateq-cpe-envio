@@ -1,27 +1,32 @@
 """
 exceptions.py
 =============
-Jerarquia de excepciones del sistema CPE DisateQ.
+Jerarquia de excepciones de DisateQ Bridge(tm).
 
 Permite distinguir exactamente QUE fallo y DONDE,
 en vez de capturar Exception generica en todos lados.
 
-                    CPEError
-                   /        \
-          DBFError            EnvioError
-         /        \          /          \
+                    BridgeError
+                   /           \
+          DBFError               EnvioError
+         /        \             /          \
   DBFNotFound  DBFCorrupto  ConexionError  RespuestaError
+                                               |
+                                          TimeoutError
 """
 
 
-class CPEError(Exception):
-    """Base para todos los errores de CPE DisateQ."""
+class BridgeError(Exception):
+    """Base para todos los errores de DisateQ Bridge."""
     pass
 
+# Alias para compatibilidad con codigo existente
+CPEError = BridgeError
 
-# ── Errores de lectura DBF ──────────────────────────────────
 
-class DBFError(CPEError):
+# ── Errores de lectura de fuente ────────────────────────────
+
+class DBFError(BridgeError):
     """Error relacionado con los archivos DBF."""
     def __init__(self, archivo: str, detalle: str):
         self.archivo = archivo
@@ -49,9 +54,17 @@ class DBFSinRegistros(DBFError):
         super().__init__(archivo, "sin registros válidos")
 
 
+class ReaderError(BridgeError):
+    """Error genérico de cualquier reader (DBF, Excel, SQL)."""
+    def __init__(self, fuente: str, detalle: str):
+        self.fuente  = fuente
+        self.detalle = detalle
+        super().__init__(f"Error leyendo '{fuente}': {detalle}")
+
+
 # ── Errores de generación ───────────────────────────────────
 
-class GeneracionError(CPEError):
+class GeneracionError(BridgeError):
     """Error al generar el TXT o JSON del comprobante."""
     def __init__(self, nombre: str, causa: Exception):
         self.nombre = nombre
@@ -61,7 +74,7 @@ class GeneracionError(CPEError):
 
 # ── Errores de envío ────────────────────────────────────────
 
-class EnvioError(CPEError):
+class EnvioError(BridgeError):
     """Error al enviar el comprobante a APIFAS."""
     def __init__(self, nombre: str, detalle: str):
         self.nombre  = nombre
@@ -83,17 +96,22 @@ class RespuestaError(EnvioError):
         super().__init__(nombre, f"respuesta inesperada: {respuesta}")
 
 
-class TimeoutError(EnvioError):
+class CPETimeoutError(EnvioError):
     """APIFAS no respondió a tiempo."""
     def __init__(self, nombre: str, segundos: int):
         super().__init__(nombre, f"timeout después de {segundos}s")
 
+# Alias para compatibilidad
+TimeoutError = CPETimeoutError
+
 
 # ── Errores de configuración ────────────────────────────────
 
-class ConfigError(CPEError):
+class ConfigError(BridgeError):
     """Configuración incompleta o inválida."""
     def __init__(self, campo: str, detalle: str = ""):
         self.campo = campo
-        super().__init__(f"Configuración inválida — '{campo}': {detalle}" if detalle
-                         else f"Falta configurar '{campo}'")
+        super().__init__(
+            f"Configuración inválida — '{campo}': {detalle}" if detalle
+            else f"Falta configurar '{campo}'"
+        )

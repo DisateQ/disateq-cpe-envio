@@ -1,52 +1,73 @@
-# CPE DisateQ™ — Envío de Facturación Electrónica
+# DisateQ Bridge™ — Motor de integración para facturación electrónica
 
-Herramienta de envío automático de Comprobantes de Pago Electrónicos (CPE) para el sistema de farmacia FoxPro. Lee directamente los archivos DBF del sistema, genera los comprobantes en el formato correcto y los envía a SUNAT vía **APIFAS** (API para DisateQ).
+Permite que sistemas de ventas legacy (FoxPro, ERP, Excel, SQL) puedan generar,
+validar y enviar comprobantes electrónicos a SUNAT de forma automática, sin
+necesidad de migrar o reemplazar el sistema existente.
 
-**Desarrollado por:** DISATEQ  
-**Autor:** @fhertejada™  
-**Versión:** v1.0.0
+**Desarrollado por:** DISATEQ
+**Autor:** @fhertejada™
+**Versión:** v2.0.0
 
 ---
 
 ## Descripción
 
-Este producto actúa como conector entre el sistema de farmacia legacy (FoxPro/DBF) y la infraestructura de facturación electrónica de DISATEQ. Soporta tres modos de operación que permiten una migración gradual sin interrumpir las operaciones del cliente.
+DisateQ Bridge™ actúa como conector entre cualquier sistema legacy y la
+infraestructura de facturación electrónica de DISATEQ. Lee los datos del
+sistema origen, normaliza, genera el TXT en formato APIFAS, valida y envía
+a SUNAT vía OSE/PSE o SEE directo.
+
+Soporta tres modos de operación para migración gradual sin interrumpir
+las operaciones del cliente.
+
+### Ecosistema DisateQ
+
+```
+DisateQ Bridge™       ← Motor local (este repo)
+BridgeAPI             ← API local de supervisión (FastAPI)
+DisateQ Plataforma CPE ← Plataforma web central
+```
+
+### Fuentes de datos soportadas
+
+| Fuente        | Estado      | Módulo                    |
+|---------------|-------------|---------------------------|
+| DBF (FoxPro)  | Operativo   | `src/readers/dbf_reader.py`  |
+| Excel (.xlsx) | Operativo   | `src/readers/excel_reader.py`|
+| SQL           | Preparado   | `src/readers/sql_reader.py`  |
 
 ### Flujo de operación
 
-**Hoy:** Lee DBF → Genera TXT → Valida → Envía a APIFAS (OSE/PSE o SEE SUNAT)
+**Operativo:** Sistema origen → DisateQ Bridge™ → TXT → Valida → APIFAS (OSE/PSE o SEE SUNAT)
 
-**Futuro:** Los TXT enviados se convierten a JSON para FFEE Platform DisateQ™ usando `txt_to_json.py`. La conversión opera sobre los archivos ya guardados en `enviados\` — sin re-leer el DBF.
+**Futuro (DisateQ Plataforma CPE):**
+TXT guardados → `txt_to_json.py` → DisateQ Plataforma CPE (`api.disateq.com/v1/cpe`)
 
 ---
 
 ## Arquitectura
 
 ```
-Sistema farmacia FoxPro (DBF)
-         ↓
-    cpe_disateq.exe
-         ↓
-    Lee DBF  ──→  Normalizer  ──→  TXT Generator
-    (enviosffee                          ↓
-     detalleventa                   Validador TXT
-     productox)                          ↓
-                                    Sender (APIFAS)
-                                    OSE/PSE o SEE SUNAT
-                                         ↓
-                                    TXT guardado en enviados/
-                                         ↓
-                               [FUTURO] txt_to_json.py
-                                         ↓
-                               [FUTURO] FFEE Platform DisateQ™
-                                    api.disateq.com/v1/cpe
+Sistema legacy (DBF / Excel / SQL / API)
+              ↓
+     readers/ (BaseReader)
+              ↓
+    DisateQ Bridge™ .exe
+              ↓
+    Normalizer  ──→  TXT Generator
+                           ↓
+                      Validador TXT
+                           ↓
+                      Sender (APIFAS)
+                      OSE/PSE o SEE SUNAT
+                           ↓
+                      TXT guardado en enviados/
+                           ↓
+                [FUTURO] txt_to_json.py
+                           ↓
+                [FUTURO] DisateQ Plataforma CPE
+                     api.disateq.com/v1/cpe
 ```
-
-**Flujo actual (operativo):**
-DBF → Normalizar → Generar TXT → Validar → Enviar a APIFAS → Guardar en `enviados\`
-
-**Flujo futuro (FFEE Platform):**
-TXT guardados → Convertir a JSON (`txt_to_json.py`) → Enviar a FFEE Platform DisateQ™
 
 ---
 
@@ -55,22 +76,40 @@ TXT guardados → Convertir a JSON (`txt_to_json.py`) → Enviar a FFEE Platform
 ```
 ffee-farmacia/
 ├── README.md
-├── compilar.bat              ← Compilar a .exe + armar paquete instalador
-├── INSTALAR.bat              ← Instalador para equipos de clientes
+├── CLAUDE.md                     ← Contexto para Claude Code
+├── compilar.bat                  ← Compila a .exe + paquete instalador
+├── INSTALAR.bat                  ← Instalador para equipos de clientes
 ├── requirements.txt
 ├── src/
-│   ├── main.py               ← Entrada principal
-│   ├── config.py             ← Gestión de configuración
-│   ├── config_wizard.py      ← Asistente de configuración (protegido con PIN)
-│   ├── dbf_reader.py         ← Lectura robusta de DBF (maneja campos nulos)
-│   ├── normalizer.py         ← Estructura interna + correcciones FoxPro
-│   ├── txt_generator.py      ← Generador TXT (modo legacy)
-│   ├── json_generator.py     ← Generador JSON (modos json/ffee)
-│   ├── sender.py             ← Envío a APIFAS
-│   ├── monitor.py            ← Monitoreo y ciclos automáticos
-│   ├── correlativo_store.py  ← Registro local de correlativos procesados
-│   ├── report.py             ← Reportes y control de correlativos
-│   └── gui.py                ← Interfaz gráfica
+│   ├── main.py                   ← Entrada principal
+│   ├── config.py                 ← Gestión de configuración
+│   ├── config_wizard.py          ← Asistente de configuración (PIN)
+│   ├── readers/                  ← Capa abstracta multi-fuente
+│   │   ├── base.py               ← Interfaz BaseReader
+│   │   ├── dbf_reader.py         ← Lector DBF (FoxPro)
+│   │   ├── excel_reader.py       ← Lector Excel (.xlsx)
+│   │   └── sql_reader.py         ← Lector SQL (stub)
+│   ├── normalizer.py             ← Estructura interna + correcciones
+│   ├── txt_generator.py          ← Generador TXT (modo legacy)
+│   ├── txt_validator.py          ← Validación completa del TXT
+│   ├── json_generator.py         ← Generador JSON (modos json/bridge)
+│   ├── txt_to_json.py            ← Conversor TXT → DisateQ Plataforma CPE
+│   ├── sender.py                 ← Envío a APIFAS
+│   ├── monitor.py                ← Orquestador del ciclo de envío
+│   ├── correlativo_store.py      ← Control de correlativos procesados
+│   ├── report.py                 ← Reportes y control de correlativos
+│   ├── status_dia.py             ← Reporte de status diario
+│   ├── simulacion.py             ← Simulación sin enviar (dry-run)
+│   ├── exceptions.py             ← Jerarquía de excepciones tipadas
+│   └── gui.py                    ← Interfaz gráfica (Tkinter)
+├── bridge_api/                   ← BridgeAPI (FastAPI) — supervisión
+│   ├── main.py
+│   ├── routers/
+│   └── schemas.py
+├── db/                           ← SQLite historial local
+│   ├── database.py
+│   └── models.py
+├── dashboard/                    ← Frontend React (DisateQ Bridge Dashboard)
 └── tests/
     ├── test_generator.py
     └── samples/
@@ -82,15 +121,19 @@ ffee-farmacia/
 
 - Windows 10 o superior
 - Python 3.10+ (solo para desarrollo/compilación)
-- Sistema de farmacia instalado en `C:\Sistemas\`
-- Carpeta `D:\FFEESUNAT\CPE DisateQ\` (se crea automáticamente)
+- Sistema legacy instalado con acceso a datos
+- Carpeta `D:\DisateQ\Bridge\` (se crea automáticamente)
 
 ### Dependencias Python
 
 ```
 requests
 dbfread
+openpyxl
 tkinter (incluido en Python estándar)
+fastapi
+uvicorn
+sqlalchemy
 pyinstaller (solo para compilar)
 ```
 
@@ -100,21 +143,15 @@ pyinstaller (solo para compilar)
 
 ### Opción A — Paquete instalador (recomendado)
 
-1. Compilar en Windows con `compilar.bat` → genera `dist\CPE_DisateQ_Instalador.zip`
+1. Compilar en Windows con `compilar.bat` → genera `dist\DisateQBridge_Instalador.zip`
 2. Copiar el ZIP al equipo del cliente y descomprimir
 3. Clic derecho en `INSTALAR.bat` → **Ejecutar como administrador**
-4. Al abrirse CPE DisateQ por primera vez, completar:
+4. Al abrirse DisateQ Bridge™ por primera vez, completar:
    - Razón social y RUC
    - Serie (ej: B001)
    - Modalidad: **OSE / PSE** o **SEE SUNAT**
-   - **Último correlativo enviado** — número de la última boleta ya enviada a SUNAT (para no reenviar históricos)
+   - **Último correlativo enviado** — para no reenviar históricos
    - **PIN de 4 dígitos** — protege el acceso a la configuración
-
-`INSTALAR.bat` hace automáticamente:
-- Crea `D:\FFEESUNAT\CPE DisateQ\` con subcarpetas `enviados\` y `errores\`
-- Copia el ejecutable
-- Registra tarea programada (cada 5 min, como SYSTEM)
-- Crea acceso directo en el escritorio público
 
 ### Opción B — Desde código fuente (desarrollo)
 
@@ -129,12 +166,12 @@ python src/main.py
 
 ## Configuración
 
-El archivo `ffee_config.ini` se genera en `D:\FFEESUNAT\CPE DisateQ\` durante la primera ejecución.
+El archivo `bridge_config.ini` se genera en `D:\DisateQ\Bridge\` durante la primera ejecución.
 
 ```ini
 [EMPRESA]
 RUC          = 10405206710
-RAZON_SOCIAL = FARMACIA DEL PUEBLO S.A.C.
+RAZON_SOCIAL = EMPRESA SAC
 SERIE        = B001
 
 [ENVIO]
@@ -144,25 +181,25 @@ URL_ENVIO    = https://apifas.disateq.com/produccion_text.php
 URL_ANULACION = https://apifas.disateq.com/produccion_anular.php
 
 [RUTAS]
-DATA_DBF     = C:\Sistemas\data
-SALIDA_TXT   = D:\FFEESUNAT\CPE DisateQ
+DATA_SOURCE  = C:\Sistemas\data
+SALIDA_TXT   = D:\DisateQ\Bridge
 
 [SEGURIDAD]
 PIN          = 1234
 
 [CORRELATIVO]
-B001         = 23168
+B001         = 0
 ```
 
 ### Endpoints APIFAS
 
-| Modalidad | Operación | URL |
-|---|---|---|
-| OSE / PSE | Envío | https://apifas.disateq.com/ose_produccion.php |
-| OSE / PSE | Anulación | https://apifas.disateq.com/ose_anular.php |
-| SEE SUNAT | Envío | https://apifas.disateq.com/produccion_text.php |
-| SEE SUNAT | Anulación | https://apifas.disateq.com/produccion_anular.php |
-| FFEE Platform | Envío | https://api.disateq.com/v1/cpe (futuro) |
+| Modalidad   | Operación  | URL                                                    |
+|-------------|------------|--------------------------------------------------------|
+| OSE / PSE   | Envío      | https://apifas.disateq.com/ose_produccion.php          |
+| OSE / PSE   | Anulación  | https://apifas.disateq.com/ose_anular.php              |
+| SEE SUNAT   | Envío      | https://apifas.disateq.com/produccion_text.php         |
+| SEE SUNAT   | Anulación  | https://apifas.disateq.com/produccion_anular.php       |
+| Plataforma  | Envío      | https://api.disateq.com/v1/cpe (futuro)                |
 
 ---
 
@@ -171,134 +208,29 @@ B001         = 23168
 ### Interfaz gráfica
 
 ```
-cpe_disateq.exe
+DisateQBridge.exe
 ```
 
 ### Línea de comandos
 
 ```bash
-cpe_disateq.exe --once        # Procesar pendientes y terminar (Tarea Programada)
-cpe_disateq.exe --config      # Abrir configuración (requiere PIN)
-cpe_disateq.exe --reporte     # Generar reporte de correlativos
-cpe_disateq.exe --modo legacy # Forzar modo TXT
-cpe_disateq.exe --modo json   # Forzar modo JSON
+DisateQBridge.exe --once        # Procesar pendientes y terminar
+DisateQBridge.exe --config      # Abrir configuración (requiere PIN)
+DisateQBridge.exe --reporte     # Generar reporte de correlativos
+DisateQBridge.exe --modo legacy # Forzar modo TXT
+DisateQBridge.exe --modo json   # Forzar modo JSON
 ```
 
 ---
 
-## DBF del sistema farmacia
+## Modos de operación
 
-El sistema lee los siguientes archivos desde `C:\Sistemas\data\`:
-
-| Archivo | Uso |
-|---|---|
-| `enviosffee.dbf` | Registro de comprobantes (`FLAG_ENVIO=2` → pendiente, `FLAG_ENVIO=3` → enviado) |
-| `detalleventa.dbf` | Detalle de ítems por comprobante |
-| `productox.dbf` | Catálogo con descripciones y códigos UNSPSC |
-
-### Campos clave — enviosffee.dbf
-
-| Campo | Descripción |
-|---|---|
-| `FILE_ENVIO` | Nombre del TXT a generar: `{RUC}-02-{SERIE}-{NUMERO}.txt` |
-| `FECHA_DOCU` | Fecha de emisión |
-| `TIPO_FACTU` | `B` = boleta, `F` = factura |
-| `SERIE_FACT` | Serie: `001`, `002`, etc. |
-| `NUMERO_FAC` | Correlativo numérico |
-| `FLAG_ENVIO` | `2` = pendiente, `3` = enviado |
-
-### Campos clave — detalleventa.dbf
-
-| Campo | Descripción |
-|---|---|
-| `CODIGO_PRO` | Código interno del producto |
-| `CANTIDAD_P` | Cantidad en unidad mayor |
-| `TABLETA_PE` | Cantidad en unidad menor (usar si CANTIDAD_P = 0) |
-| `PRECIO_UNI` | Precio unidad mayor con IGV |
-| `PRECIO_FRA` | Precio fracción con IGV |
-| `MONTO_PEDI` | Subtotal sin IGV |
-| `IGV_PEDIDO` | IGV del ítem |
-| `REAL_PEDID` | Total con IGV |
-| `PRODUCTO_E` | `1` = exonerado IGV |
-| `ICBPER` | `1` = impuesto bolsas plásticas |
-| `FLAG_ANULA` | `1` = anulado (ignorar) |
-| `FORMA_FACT` | `1` = contado, `2` = crédito |
+| Modo     | Descripción                                                      |
+|----------|------------------------------------------------------------------|
+| `legacy` | Genera TXT → envía a APIFAS → guarda en `enviados/`             |
+| `json`   | Genera JSON → envía a APIFAS (formato alternativo)              |
+| `bridge` | Genera TXT + convierte a JSON → envía a DisateQ Plataforma CPE  |
 
 ---
 
-## Control de correlativos
-
-Al instalar en un cliente con historial previo, el técnico debe ingresar el **último número de boleta/factura ya enviado** a SUNAT. CPE DisateQ guarda ese valor en `procesados.json` y:
-
-- Ignora todos los comprobantes con número ≤ al correlativo indicado
-- Registra automáticamente cada envío exitoso
-- Compacta el registro: si se enviaron 23168, 23169, 23170... guarda `hasta: 23170`
-
-Esto evita reenvíos de históricos sin modificar el DBF del sistema FoxPro.
-
----
-
-## Correcciones sobre el sistema original
-
-El generador corrige los siguientes problemas del código FoxPro original (`infoose.scx`):
-
-| Problema | Corrección |
-|---|---|
-| Afectación IGV siempre `1` | Verifica `PRODUCTO_E` e `ICBPER` por ítem |
-| Exonerados suman a gravada | Calcula `total_gravada` y `total_exonerada` por separado |
-| ICBPER en `total_gratuita` | Usa `total_impuestos_bolsas` |
-| Forma de pago vacía | Lee `FORMA_FACT`: `1`=Contado, `2`=Crédito |
-| Descripción solo código | Cruza con `productox.DESCRIPCIO + PRESENTA_P` |
-| UNSPSC hardcodeado | Lee `productox.CODIGO_UNS` |
-| Campos fecha nulos (bytes `\x00`) | `_SafeFieldParser` maneja sin excepción |
-
----
-
-## Ciclos de envío
-
-| Tipo | Frecuencia | Lote máximo |
-|---|---|---|
-| Facturas (serie F) | Inmediato al detectar | 20 por ciclo |
-| Boletas (serie B) | Cada 5 minutos | 20 por ciclo |
-| Manual ("Enviar ahora") | Inmediato, fuerza boletas también | 20 por ciclo |
-
----
-
-## Compilar
-
-```bash
-# Doble clic en compilar.bat
-# Genera: dist\cpe_disateq.exe + dist\CPE_DisateQ_Instalador.zip
-```
-
----
-
-## Tests
-
-```bash
-python -m pytest tests/ -v
-```
-
----
-
-## Roadmap
-
-- [x] Lectura robusta de DBF (campos nulos, fechas inválidas)
-- [x] Generador TXT corregido (modo legacy)
-- [x] Generador JSON normalizado
-- [x] Interfaz gráfica — CPE DisateQ™
-- [x] Configuración protegida con PIN
-- [x] Control de correlativos — evita reenvíos históricos
-- [x] Lotes de envío — no satura APIFAS
-- [x] Instalador de un clic para clientes
-- [ ] Modo `ffee` — integración con FFEE Platform
-- [ ] Soporte notas de crédito/débito automáticas
-- [ ] Resumen diario de boletas (RC) para SEE SUNAT
-- [ ] Notificaciones WhatsApp de errores
-- [ ] Marcar FLAG_ENVIO=3 en DBF tras envío exitoso
-
----
-
-## Licencia
-
-Producto propietario — DISATEQ. Todos los derechos reservados.
+## Powered by DisateQ Bridge™ — @fhertejada™

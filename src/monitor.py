@@ -23,7 +23,7 @@ from pathlib import Path
 from dbf_reader   import leer_pendientes, leer_productos, leer_detalles, verificar_rutas, marcar_enviado_dbf
 from normalizer   import normalizar, _safe_str
 from txt_generator import generar_txt, guardar_txt
-from sender       import enviar_txt, enviar_json, verificar_conexion
+from sender       import enviar_txt, enviar_json, verificar_conexion from config import url_envio as get_url_envio
 from report       import generar_reporte
 from correlativo_store import ya_procesado, marcar_enviado
 from txt_validator import txt_es_valido
@@ -99,7 +99,7 @@ class Monitor:
 
         razon_social = self.cfg.get("EMPRESA", "razon_social")
         modo         = self.cfg.get("ENVIO", "modo", fallback="legacy")
-        url_envio    = self.cfg.get("ENVIO", "url_envio")
+        url_envio    = get_url_envio(self.cfg)
         salida       = self.cfg.get("RUTAS", "salida_txt")
 
         Path(salida).mkdir(parents=True, exist_ok=True)

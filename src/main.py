@@ -1,14 +1,15 @@
 """
 main.py
 =======
-Entrada principal CPE DisateQ(tm).
+Entrada principal DisateQ Bridge(tm).
 
 Modos:
   (sin args)    -> Interfaz grafica
   --once        -> Procesa pendientes y termina (Tarea Programada)
   --config      -> Abre configuracion (requiere PIN)
   --reporte     -> Genera reporte de correlativos
-  --modo legacy/json/ffee -> Fuerza modo de operacion
+  --modalidad OSE|SEE -> Fuerza modalidad de envio
+  --modo legacy|json  -> Fuerza modo de generacion
 """
 
 import sys
@@ -16,12 +17,11 @@ import argparse
 import logging
 from pathlib import Path
 
+VERSION = "2.0.0"
+
 # ── Resolver ruta de modulos para PyInstaller ──────────────
-# Cuando se ejecuta como .exe compilado, los modulos estan en
-# la carpeta temporal _MEIPASS/src — hay que agregarlo al path.
 def _setup_path():
     if getattr(sys, "frozen", False):
-        # Ejecutable compilado con PyInstaller
         base = Path(sys._MEIPASS)
         src  = base / "src"
         if src.exists() and str(src) not in sys.path:
@@ -29,15 +29,14 @@ def _setup_path():
         if str(base) not in sys.path:
             sys.path.insert(0, str(base))
     else:
-        # Desarrollo: agregar src/ al path
         src = Path(__file__).parent
         if str(src) not in sys.path:
             sys.path.insert(0, str(src))
 
 _setup_path()
-# ───────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────
 
-from config import leer_config, config_completa
+from config import leer_config, config_completa, label_modalidad
 
 
 def init_logging(log_file: str):
@@ -54,23 +53,27 @@ def init_logging(log_file: str):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="CPE DisateQ\u2122 \u2014 @fhertejada\u2122 \u00b7 DisateQ\u2122")
-    parser.add_argument("--once",    action="store_true")
-    parser.add_argument("--config",  action="store_true")
-    parser.add_argument("--reporte", action="store_true")
-    parser.add_argument("--modo",    choices=["legacy", "json", "ffee"])
+        description=f"DisateQ Bridge\u2122 v{VERSION} \u2014 @fhertejada\u2122 \u00b7 DisateQ\u2122")
+    parser.add_argument("--once",       action="store_true")
+    parser.add_argument("--config",     action="store_true")
+    parser.add_argument("--reporte",    action="store_true")
+    parser.add_argument("--modalidad",  choices=["OSE", "SEE"])
+    parser.add_argument("--modo",       choices=["legacy", "json"])
     args = parser.parse_args()
 
     cfg = leer_config()
 
-    salida   = cfg.get("RUTAS", "salida_txt", fallback=r"D:\FFEESUNAT\CPE DisateQ")
-    log_file = str(Path(salida) / "cpe_disateq.log")
+    salida   = cfg.get("RUTAS", "salida_txt", fallback=r"D:\DisateQ\Bridge")
+    log_file = str(Path(salida) / "bridge.log")
     Path(salida).mkdir(parents=True, exist_ok=True)
     init_logging(log_file)
 
     log = logging.getLogger(__name__)
-    log.info("CPE DisateQ\u2122 iniciado \u2014 @fhertejada\u2122 \u00b7 DisateQ\u2122")
+    log.info(f"DisateQ Bridge\u2122 v{VERSION} iniciado \u2014 @fhertejada\u2122 \u00b7 DisateQ\u2122")
 
+    # Sobrescribir desde argumentos si se pasaron
+    if args.modalidad:
+        cfg.set("ENVIO", "modalidad", args.modalidad)
     if args.modo:
         cfg.set("ENVIO", "modo", args.modo)
 
@@ -84,7 +87,7 @@ def main():
         root.mainloop()
         return
 
-    # Primera ejecucion: sin PIN configurado aun
+    # Primera ejecucion: sin configuracion completa
     if not config_completa(cfg):
         log.info("Primera ejecucion \u2014 abriendo configuracion inicial")
         import tkinter as tk
@@ -94,32 +97,30 @@ def main():
         root.withdraw()
         messagebox.showinfo(
             "Configuracion inicial",
-            "Bienvenido a CPE DisateQ\u2122.\n\nComplete la configuracion para continuar.\n"
+            "Bienvenido a DisateQ Bridge\u2122.\n\n"
+            "Complete la configuracion para continuar.\n"
             "Defina un PIN de 4 digitos que protegera el acceso a esta ventana."
         )
-        abrir_wizard(root, cfg, callback=lambda: root.quit(), primer_arranque=True)
+        abrir_wizard(root, cfg)
         root.mainloop()
-        cfg = leer_config()
-        if not config_completa(cfg):
-            log.error("Configuracion incompleta. Saliendo.")
-            return
-
-    if args.reporte:
-        from report import generar_reporte
-        rpt = generar_reporte(Path(salida))
-        print(rpt.read_text(encoding="utf-8"))
         return
 
+    # --once: sin GUI, para Tarea Programada Windows
     if args.once:
         from monitor import Monitor
-        log.info("Modo: ejecucion puntual (--once)")
-        Monitor(cfg)._ciclo()
+        monitor = Monitor(cfg)
+        monitor.procesar_una_vez()
         return
 
+    # --reporte
+    if args.reporte:
+        from report import generar_reporte
+        print(generar_reporte(cfg.get("RUTAS", "salida_txt")))
+        return
+
+    # Modo normal: GUI
     from gui import iniciar_gui
-    from monitor import Monitor
-    from report import generar_reporte
-    iniciar_gui(cfg, Monitor, generar_reporte)
+    iniciar_gui(cfg)
 
 
 if __name__ == "__main__":
