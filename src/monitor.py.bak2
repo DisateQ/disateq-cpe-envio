@@ -23,10 +23,12 @@ from pathlib import Path
 from dbf_reader   import leer_pendientes, leer_productos, leer_detalles, verificar_rutas, marcar_enviado_dbf
 from normalizer   import normalizar, _safe_str
 from txt_generator import generar_txt, guardar_txt
-from sender       import enviar_txt, enviar_json, verificar_conexion from config import url_envio as get_url_envio
+from sender       import enviar_txt, enviar_json, verificar_conexion
 from report       import generar_reporte
 from correlativo_store import ya_procesado, marcar_enviado
 from txt_validator import txt_es_valido
+from rc_diario          import procesar_rc_diario
+from whatsapp_notifier  import WhatsAppNotifier
 from exceptions   import (
     CPEError, DBFError, DBFNotFound, DBFCorrupto,
     GeneracionError, EnvioError, ConexionError, RespuestaError
@@ -34,7 +36,7 @@ from exceptions   import (
 
 log = logging.getLogger(__name__)
 
-INTERVALO_BOLETA   = 300   # 5 min entre ciclos automaticos de boletas
+INTERVALO_BOLETA   = 1800  # 30 min entre ciclos automaticos de boletas
 INTERVALO_CHECK    = 10    # revision cada 10 segundos
 LOTE_MAXIMO        = 20    # max comprobantes por ciclo
 DELAY_ENTRE_ENVIOS = 0.3   # segundos entre envios para no saturar APIFAS
@@ -56,6 +58,7 @@ class Monitor:
         self.stop            = threading.Event()
         self._ultimo_boleta  = 0
         self._ultimo_reporte = date.today()
+        self._wa             = WhatsAppNotifier(cfg)
 
     # ── Comunicacion con GUI ─────────────────────────────────
 
@@ -143,6 +146,7 @@ class Monitor:
                         "nombre": nombre, "cpe_tipo": cpe_tipo,
                         "msg": e.respuesta})
             self._mover_txt(salida, nombre, "legacy", destino="errores")
+            self._wa.registrar_error(nombre, e.respuesta)
             return
 
         except EnvioError as e:
@@ -151,6 +155,7 @@ class Monitor:
                         "nombre": nombre, "cpe_tipo": cpe_tipo,
                         "msg": str(e)})
             self._mover_txt(salida, nombre, modo, destino="errores")
+            self._wa.registrar_error(nombre, str(e))
             return
 
         # Exito
@@ -179,6 +184,7 @@ class Monitor:
         except Exception as e:
             log.warning(f"Error al marcar FLAG_ENVIO en DBF: {e}")
 
+        self._wa.registrar_exito()
         self._emit({"tipo": "evento", "estado": "enviado",
                     "nombre": nombre, "cpe_tipo": cpe_tipo, "msg": msg})
 
@@ -302,6 +308,19 @@ class Monitor:
                 self._log(f"Reporte diario: {rpt.name}", "info")
             except Exception:
                 pass
+            # RC diario SEE SUNAT (solo si modalidad es SUNAT)
+            if self.cfg.get("ENVIO", "modalidad", fallback="").upper() == "SUNAT":
+                try:
+                    ruc_e  = self.cfg.get("EMPRESA", "ruc", fallback="")
+                    rs_e   = self.cfg.get("EMPRESA", "razon_social", fallback="")
+                    url_rc = self.cfg.get("ENVIO", "url_rc", fallback="")
+                    ok_rc, msg_rc = procesar_rc_diario(salida, ruc_e, rs_e, url_rc)
+                    self._log(
+                        f"RC diario: {msg_rc}",
+                        "info" if ok_rc else "warn",
+                    )
+                except Exception as e_rc:
+                    self._log(f"RC diario error: {e_rc}", "warn")
             self._ultimo_reporte = hoy
 
     def ciclo_manual(self):

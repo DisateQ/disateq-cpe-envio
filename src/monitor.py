@@ -27,8 +27,6 @@ from sender       import enviar_txt, enviar_json, verificar_conexion
 from report       import generar_reporte
 from correlativo_store import ya_procesado, marcar_enviado
 from txt_validator import txt_es_valido
-from rc_diario          import procesar_rc_diario
-from whatsapp_notifier  import WhatsAppNotifier
 from exceptions   import (
     CPEError, DBFError, DBFNotFound, DBFCorrupto,
     GeneracionError, EnvioError, ConexionError, RespuestaError
@@ -58,7 +56,6 @@ class Monitor:
         self.stop            = threading.Event()
         self._ultimo_boleta  = 0
         self._ultimo_reporte = date.today()
-        self._wa             = WhatsAppNotifier(cfg)
 
     # ── Comunicacion con GUI ─────────────────────────────────
 
@@ -154,7 +151,6 @@ class Monitor:
                         "nombre": nombre, "cpe_tipo": cpe_tipo,
                         "msg": e.respuesta})
             self._mover_txt(salida, nombre, "legacy", destino="errores")
-            self._wa.registrar_error(nombre, e.respuesta)
             return
 
         except EnvioError as e:
@@ -163,7 +159,6 @@ class Monitor:
                         "nombre": nombre, "cpe_tipo": cpe_tipo,
                         "msg": str(e)})
             self._mover_txt(salida, nombre, modo, destino="errores")
-            self._wa.registrar_error(nombre, str(e))
             return
 
         # Exito
@@ -192,7 +187,6 @@ class Monitor:
         except Exception as e:
             log.warning(f"Error al marcar FLAG_ENVIO en DBF: {e}")
 
-        self._wa.registrar_exito()
         monto_enviado = float(comp["totales"]["total"])
         tipo_doc_env  = comp.get("tipo_doc", "03")
         self._emit({"tipo": "evento", "estado": "enviado",
@@ -319,19 +313,6 @@ class Monitor:
                 self._log(f"Reporte diario: {rpt.name}", "info")
             except Exception:
                 pass
-            # RC diario SEE SUNAT (solo si modalidad es SUNAT)
-            if self.cfg.get("ENVIO", "modalidad", fallback="").upper() == "SUNAT":
-                try:
-                    ruc_e  = self.cfg.get("EMPRESA", "ruc", fallback="")
-                    rs_e   = self.cfg.get("EMPRESA", "razon_social", fallback="")
-                    url_rc = self.cfg.get("ENVIO", "url_rc", fallback="")
-                    ok_rc, msg_rc = procesar_rc_diario(salida, ruc_e, rs_e, url_rc)
-                    self._log(
-                        f"RC diario: {msg_rc}",
-                        "info" if ok_rc else "warn",
-                    )
-                except Exception as e_rc:
-                    self._log(f"RC diario error: {e_rc}", "warn")
             self._ultimo_reporte = hoy
 
     def ciclo_manual(self):
