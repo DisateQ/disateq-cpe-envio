@@ -36,7 +36,7 @@ from exceptions   import (
 
 log = logging.getLogger(__name__)
 
-INTERVALO_BOLETA   = 300   # 5 min entre ciclos automaticos de boletas
+INTERVALO_BOLETA   = 1800  # 30 min entre ciclos automaticos de boletas
 INTERVALO_CHECK    = 10    # revision cada 10 segundos
 LOTE_MAXIMO        = 20    # max comprobantes por ciclo
 DELAY_ENTRE_ENVIOS = 0.3   # segundos entre envios para no saturar APIFAS
@@ -185,8 +185,11 @@ class Monitor:
             log.warning(f"Error al marcar FLAG_ENVIO en DBF: {e}")
 
         self._wa.registrar_exito()
+        monto_enviado = float(comp["totales"]["total"])
+        tipo_doc_env  = comp.get("tipo_doc", "03")
         self._emit({"tipo": "evento", "estado": "enviado",
-                    "nombre": nombre, "cpe_tipo": cpe_tipo, "msg": msg})
+                    "nombre": nombre, "cpe_tipo": cpe_tipo, "msg": msg,
+                    "monto": monto_enviado, "tipo_doc": tipo_doc_env})
 
         time.sleep(DELAY_ENTRE_ENVIOS)
 
