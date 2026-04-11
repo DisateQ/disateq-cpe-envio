@@ -27,6 +27,8 @@ from sender       import enviar_txt, enviar_json, verificar_conexion from config
 from report       import generar_reporte
 from correlativo_store import ya_procesado, marcar_enviado
 from txt_validator import txt_es_valido
+from rc_diario          import procesar_rc_diario
+from whatsapp_notifier  import WhatsAppNotifier
 from exceptions   import (
     CPEError, DBFError, DBFNotFound, DBFCorrupto,
     GeneracionError, EnvioError, ConexionError, RespuestaError
@@ -56,6 +58,7 @@ class Monitor:
         self.stop            = threading.Event()
         self._ultimo_boleta  = 0
         self._ultimo_reporte = date.today()
+        self._wa             = WhatsAppNotifier(cfg)
 
     # ── Comunicacion con GUI ─────────────────────────────────
 
@@ -143,6 +146,7 @@ class Monitor:
                         "nombre": nombre, "cpe_tipo": cpe_tipo,
                         "msg": e.respuesta})
             self._mover_txt(salida, nombre, "legacy", destino="errores")
+            self._wa.registrar_error(nombre, e.respuesta)
             return
 
         except EnvioError as e:
@@ -151,14 +155,36 @@ class Monitor:
                         "nombre": nombre, "cpe_tipo": cpe_tipo,
                         "msg": str(e)})
             self._mover_txt(salida, nombre, modo, destino="errores")
+            self._wa.registrar_error(nombre, str(e))
             return
 
         # Exito
         self._mover_txt(salida, nombre, "legacy", destino="enviados")
+
+        # Marcar en procesados.json (control de correlativos del Bridge)
         try:
             marcar_enviado(salida, serie_fmt, int(numero))
         except Exception:
             pass
+
+        # Marcar FLAG_ENVIO=3 en enviosffee.dbf para que FoxPro sepa
+        # que el comprobante ya fue enviado a SUNAT y no lo reintente.
+        # Falla silenciosamente — nunca bloquea el flujo principal.
+        try:
+            ruta_data = self.cfg.get("RUTAS", "data_dbf")
+            ok_dbf = marcar_enviado_dbf(ruta_data, tipo, serie, numero)
+            if ok_dbf:
+                log.debug(f"FLAG_ENVIO=3 marcado en DBF: {serie_fmt}-{numero}")
+            else:
+                log.warning(
+                    f"No se pudo marcar FLAG_ENVIO=3 en DBF para "
+                    f"{serie_fmt}-{numero} — el registro puede ser reprocesado "
+                    f"por FoxPro si reinicia el sistema."
+                )
+        except Exception as e:
+            log.warning(f"Error al marcar FLAG_ENVIO en DBF: {e}")
+
+        self._wa.registrar_exito()
         self._emit({"tipo": "evento", "estado": "enviado",
                     "nombre": nombre, "cpe_tipo": cpe_tipo, "msg": msg})
 
@@ -282,6 +308,19 @@ class Monitor:
                 self._log(f"Reporte diario: {rpt.name}", "info")
             except Exception:
                 pass
+            # RC diario SEE SUNAT (solo si modalidad es SUNAT)
+            if self.cfg.get("ENVIO", "modalidad", fallback="").upper() == "SUNAT":
+                try:
+                    ruc_e  = self.cfg.get("EMPRESA", "ruc", fallback="")
+                    rs_e   = self.cfg.get("EMPRESA", "razon_social", fallback="")
+                    url_rc = self.cfg.get("ENVIO", "url_rc", fallback="")
+                    ok_rc, msg_rc = procesar_rc_diario(salida, ruc_e, rs_e, url_rc)
+                    self._log(
+                        f"RC diario: {msg_rc}",
+                        "info" if ok_rc else "warn",
+                    )
+                except Exception as e_rc:
+                    self._log(f"RC diario error: {e_rc}", "warn")
             self._ultimo_reporte = hoy
 
     def ciclo_manual(self):
