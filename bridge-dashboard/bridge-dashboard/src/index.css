@@ -1,0 +1,98 @@
+/* ── Reset ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { height: 100%; }
+body {
+  height: 100%;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+#root { height: 100%; }
+
+/* ── Tokens light ── */
+:root {
+  --bg:          #f0f1f3;
+  --surface:     #ffffff;
+  --surface2:    #f7f8fa;
+  --surface3:    #eef0f4;
+  --border:      rgba(0,0,0,0.07);
+  --border2:     rgba(0,0,0,0.13);
+
+  --ink:         #0e1420;
+  --ink2:        #3c4557;
+  --ink3:        #7b869a;
+  --ink4:        #a8b2c2;
+
+  --green:       #1b7f52;
+  --green-bg:    #e8f6ef;
+  --green-mid:   #2fa96e;
+  --amber:       #8c5209;
+  --amber-bg:    #fef6e7;
+  --amber-mid:   #d4880d;
+  --red:         #9b1f1f;
+  --red-bg:      #fdeaea;
+  --red-mid:     #d44444;
+  --blue:        #1a4f8c;
+  --blue-bg:     #e8f1fc;
+  --blue-mid:    #2e72d2;
+
+  --mono:        'IBM Plex Mono', monospace;
+  --sans:        'DM Sans', system-ui, sans-serif;
+
+  --radius-sm:   6px;
+  --radius-md:   10px;
+  --radius-lg:   14px;
+
+  --sidebar-w:   220px;
+  --topbar-h:    52px;
+}
+
+/* ── Tokens dark ── */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:       #111722;
+    --surface:  #1a2235;
+    --surface2: #212d42;
+    --surface3: #293347;
+    --border:   rgba(255,255,255,0.06);
+    --border2:  rgba(255,255,255,0.11);
+
+    --ink:      #e4eaf4;
+    --ink2:     #a8b4c8;
+    --ink3:     #5e6d84;
+    --ink4:     #3d4e65;
+
+    --green:       #3dd68a;
+    --green-bg:    #0c2419;
+    --green-mid:   #2fa96e;
+    --amber:       #f0b030;
+    --amber-bg:    #271a05;
+    --amber-mid:   #d4880d;
+    --red:         #e86060;
+    --red-bg:      #270d0d;
+    --red-mid:     #c94444;
+    --blue:        #6baee8;
+    --blue-bg:     #0c1e38;
+    --blue-mid:    #2e72d2;
+  }
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+
+/* ── Utilidades globales ── */
+.mono { font-family: var(--mono); }
+.muted { color: var(--ink3); }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Animaciones de entrada ── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-up {
+  animation: fadeUp 0.25s ease forwards;
+}
