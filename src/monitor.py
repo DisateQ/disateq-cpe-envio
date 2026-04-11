@@ -81,7 +81,15 @@ class Monitor:
         serie     = _safe_str(envio.get("SERIE_FACT"), "001").zfill(3)
         numero    = _safe_str(envio.get("NUMERO_FAC"), "0")
         serie_fmt = f"{tipo}{serie}"
-        cpe_tipo  = "FACTURA" if tipo == "F" else "BOLETA"
+        tipo_upper = tipo.upper()
+        if tipo_upper in ("N", "NC") or serie_fmt.upper().startswith(("FC", "NC", "BC")):
+            cpe_tipo = "NOTA CREDITO"
+        elif tipo_upper in ("D", "ND") or serie_fmt.upper().startswith(("FD", "ND", "BD")):
+            cpe_tipo = "NOTA DEBITO"
+        elif tipo_upper == "F" or serie_fmt.upper().startswith("F"):
+            cpe_tipo = "FACTURA"
+        else:
+            cpe_tipo = "BOLETA"
         ruc       = self.cfg.get("EMPRESA", "ruc")
         nombre_arc = f"{ruc}-02-{serie_fmt}-{numero.zfill(8)}.txt"
 

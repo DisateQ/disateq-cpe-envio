@@ -75,8 +75,8 @@ def _validar_numero(campos: dict) -> list:
 
 def _validar_tipo(campos: dict) -> list:
     tipo = campos.get("tipo_de_comprobante", "")
-    if tipo and tipo not in ("1", "2"):
-        return [f"Tipo de comprobante invalido: '{tipo}' — esperado 1 (factura) o 2 (boleta)"]
+    if tipo and tipo not in ("1", "2", "3"):
+        return [f"Tipo de comprobante invalido: '{tipo}' — esperado 1 (factura), 2 (boleta) o 3 (nota credito/debito)"]
     return []
 
 
