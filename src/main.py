@@ -120,8 +120,11 @@ def main():
 
     # Modo normal: GUI
     from gui import iniciar_gui
-    iniciar_gui(cfg)
+    from monitor import Monitor
+    from report import generar_reporte
+    iniciar_gui(cfg, Monitor, generar_reporte)
 
 
 if __name__ == "__main__":
     main()
+

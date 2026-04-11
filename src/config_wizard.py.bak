@@ -3,17 +3,26 @@ config_wizard.py
 ================
 Asistente de configuracion — CPE DisateQ™
 Protegido con PIN de 4 digitos.
+
+Cambios v2.1:
+  - Sección APIFAS muestra URLs editables
+  - Modalidad CUSTOM desbloquea campos de URL para edición libre
+  - Botón "Restaurar URLs por defecto" para volver a valores oficiales
+  - Indicador visual cuando las URLs son personalizadas
 """
 
 import tkinter as tk
 from tkinter import messagebox
-from config import guardar_config, actualizar_endpoints, ENDPOINTS, BASE_DIR
+from config import (
+    guardar_config, actualizar_endpoints, resetear_endpoints,
+    urls_son_personalizadas, ENDPOINTS, BASE_DIR,
+)
 from correlativo_store import establecer_inicio, _cargar as cs_cargar
 
 # PIN maestro DisateQ — solo conocido por el equipo tecnico
 _PIN_MAESTRO = "1947"
 
-# ── Colores ──
+# ── Colores ──────────────────────────────────────────────────
 C_HEADER  = "#1a3a5c"
 C_BG      = "#f0f0f0"
 C_GRIS    = "#666666"
@@ -21,7 +30,10 @@ C_BORDER  = "#cccccc"
 C_DISABLE = "#aaaaaa"
 C_AZUL    = "#1565c0"
 C_VERDE   = "#2e7d32"
+C_AMBER   = "#e65100"
 
+
+# ── PIN ──────────────────────────────────────────────────────
 
 def pedir_pin(parent, cfg) -> bool:
     pin_guardado = cfg.get("SEGURIDAD", "pin", fallback="").strip()
@@ -69,6 +81,8 @@ def pedir_pin(parent, cfg) -> bool:
     win.wait_window()
     return resultado[0]
 
+
+# ── Wizard principal ─────────────────────────────────────────
 
 def abrir_wizard(parent, cfg, callback=None, primer_arranque=False):
     if not primer_arranque:
@@ -147,20 +161,21 @@ def abrir_wizard(parent, cfg, callback=None, primer_arranque=False):
                  width=10, relief="solid", bd=1).pack(side="left", padx=(4, 0))
         return vs, vc
 
-    # ══ Empresa ══
+    # ══ Empresa ══════════════════════════════════════════════
     seccion("Datos de la empresa")
     v_ruc    = campo("RUC",              cfg.get("EMPRESA", "ruc",              fallback=""))
     v_razon  = campo("Razon social",     cfg.get("EMPRESA", "razon_social",     fallback=""))
     v_nombre = campo("Nombre comercial", cfg.get("EMPRESA", "nombre_comercial", fallback=""))
-    nota("Se muestra como titulo en la interfaz principal")
+    v_alias  = campo("Alias del local",  cfg.get("EMPRESA", "alias",            fallback=""))
+    nota("Identifica este local. Ej: Local Grau 1, Sucursal Centro")
 
-    # ══ Seguridad ══
+    # ══ Seguridad ═════════════════════════════════════════════
     seccion("Seguridad")
     v_pin = campo("PIN de acceso (4 dig.)",
                   cfg.get("SEGURIDAD", "pin", fallback=""), show="\u2022")
     nota("Protege el acceso a esta ventana de configuracion")
 
-    # ══ Series y Correlativos ══
+    # ══ Series y Correlativos ═════════════════════════════════
     seccion("Series y correlativos de inicio")
     r_n = next_row()
     tk.Label(fr,
@@ -180,64 +195,146 @@ def abrir_wizard(parent, cfg, callback=None, primer_arranque=False):
     serie_f = cfg.get("EMPRESA", "serie_factura", fallback="F001").upper()
     serie_n = cfg.get("EMPRESA", "serie_nota",    fallback="NC01").upper()
 
-    v_serie_b, v_corr_b = fila_serie("Boletas",       serie_b, ultimo(serie_b))
-    v_serie_f, v_corr_f = fila_serie("Facturas",       serie_f, ultimo(serie_f))
-    v_serie_n, v_corr_n = fila_serie("Notas cred/deb", serie_n, ultimo(serie_n))
+    v_serie_b, v_corr_b = fila_serie("Boletas",        serie_b, ultimo(serie_b))
+    v_serie_f, v_corr_f = fila_serie("Facturas",        serie_f, ultimo(serie_f))
+    v_serie_n, v_corr_n = fila_serie("Notas cred/deb",  serie_n, ultimo(serie_n))
 
-    # ══ Conexion APIFAS ══
+    # ══ Conexión APIFAS ═══════════════════════════════════════
     seccion("Conexion APIFAS")
+
+    # Modalidad (radio buttons: OSE, SUNAT, CUSTOM)
     r_mod = next_row()
     tk.Label(fr, text="Modalidad", font=("Segoe UI", 10),
              bg=C_BG, fg=C_GRIS, anchor="w").grid(
              row=r_mod, column=0, sticky="w", pady=5, padx=(0, 10))
     fr_mod = tk.Frame(fr, bg=C_BG)
     fr_mod.grid(row=r_mod, column=1, sticky="w", pady=5)
-    v_modalidad = tk.StringVar(value=cfg.get("ENVIO", "modalidad", fallback="OSE"))
-    for val, lbl in [("OSE", "OSE / PSE"), ("SUNAT", "SEE SUNAT")]:
+    v_modalidad = tk.StringVar(value=cfg.get("ENVIO", "modalidad", fallback="OSE").upper())
+    for val, lbl in [("OSE", "OSE / PSE"), ("SUNAT", "SEE SUNAT"), ("CUSTOM", "URL personalizada")]:
         tk.Radiobutton(fr_mod, text=lbl, variable=v_modalidad, value=val,
-                       font=("Segoe UI", 10), bg=C_BG).pack(side="left", padx=(0, 16))
+                       font=("Segoe UI", 10), bg=C_BG,
+                       command=_actualizar_urls_por_modalidad_factory(
+                           v_modalidad, None, None, None  # se inyectan abajo
+                       )).pack(side="left", padx=(0, 12))
 
+    # Descripción dinámica de la modalidad
     r_ep = next_row()
     lbl_ep = tk.Label(fr, text="", font=("Segoe UI", 8, "italic"),
                       bg=C_BG, fg=C_DISABLE)
     lbl_ep.grid(row=r_ep, column=1, sticky="w", pady=(0, 3))
-    EP_LABELS = {
-        "OSE":   "Envio via OSE / PSE  \u2014  Operador de Servicios Electronicos",
-        "SUNAT": "Envio directo SEE SUNAT  \u2014  Factura Electronica SUNAT",
-    }
-    def actualizar_ep(*a):
-        lbl_ep.config(text=EP_LABELS.get(v_modalidad.get().upper(), ""))
-    v_modalidad.trace_add("write", actualizar_ep)
-    actualizar_ep()
 
-    # ══ Generacion ══
+    EP_LABELS = {
+        "OSE":    "Envio via OSE / PSE  \u2014  Operador de Servicios Electronicos",
+        "SUNAT":  "Envio directo SEE SUNAT  \u2014  Factura Electronica SUNAT",
+        "CUSTOM": "URL libre  \u2014  Ingrese las URLs manualmente",
+    }
+
+    # ── Campo URL envío ──
+    r_url = next_row()
+    tk.Label(fr, text="URL envio", font=("Segoe UI", 10),
+             bg=C_BG, fg=C_GRIS, anchor="w").grid(
+             row=r_url, column=0, sticky="w", pady=4, padx=(0, 10))
+    v_url_envio = tk.StringVar(value=cfg.get("ENVIO", "url_envio", fallback=""))
+    entry_url_envio = tk.Entry(fr, textvariable=v_url_envio, font=("Segoe UI", 9),
+                               relief="solid", bd=1)
+    entry_url_envio.grid(row=r_url, column=1, sticky="ew", pady=4)
+
+    # ── Campo URL anulación ──
+    r_anul = next_row()
+    tk.Label(fr, text="URL anulacion", font=("Segoe UI", 10),
+             bg=C_BG, fg=C_GRIS, anchor="w").grid(
+             row=r_anul, column=0, sticky="w", pady=4, padx=(0, 10))
+    v_url_anulacion = tk.StringVar(value=cfg.get("ENVIO", "url_anulacion", fallback=""))
+    entry_url_anulacion = tk.Entry(fr, textvariable=v_url_anulacion, font=("Segoe UI", 9),
+                                   relief="solid", bd=1)
+    entry_url_anulacion.grid(row=r_anul, column=1, sticky="ew", pady=4)
+
+    # ── Indicador de URLs personalizadas ──
+    r_ind = next_row()
+    lbl_url_custom = tk.Label(fr, text="", font=("Segoe UI", 8, "italic"),
+                              bg=C_BG, fg=C_AMBER)
+    lbl_url_custom.grid(row=r_ind, column=1, sticky="w", pady=(0, 2))
+
+    # ── Botón restaurar URLs ──
+    r_rst = next_row()
+    btn_restaurar = tk.Button(fr, text="Restaurar URLs por defecto",
+                              font=("Segoe UI", 8), bg=C_BG, fg=C_AZUL,
+                              relief="flat", bd=0, cursor="hand2",
+                              command=lambda: _restaurar_urls(
+                                  v_modalidad, v_url_envio, v_url_anulacion, lbl_url_custom
+                              ))
+    btn_restaurar.grid(row=r_rst, column=1, sticky="w", pady=(0, 4))
+
+    # ── Lógica dinámica de URLs ──
+    def _actualizar_ui_urls(*_):
+        """Actualiza labels, estados y contenido de campos según modalidad."""
+        mod = v_modalidad.get().upper()
+        lbl_ep.config(text=EP_LABELS.get(mod, ""))
+
+        if mod == "CUSTOM":
+            # URLs libres — habilitadas para editar
+            entry_url_envio.config(state="normal", fg="#000000")
+            entry_url_anulacion.config(state="normal", fg="#000000")
+            btn_restaurar.config(state="disabled")
+            lbl_url_custom.config(text="\u270f  URLs personalizadas activas")
+        else:
+            # Cargar URLs del preset elegido
+            v_url_envio.set(ENDPOINTS[mod]["envio"])
+            v_url_anulacion.set(ENDPOINTS[mod]["anulacion"])
+            # Solo lectura para evitar edición accidental
+            entry_url_envio.config(state="readonly", fg=C_GRIS)
+            entry_url_anulacion.config(state="readonly", fg=C_GRIS)
+            btn_restaurar.config(state="disabled")
+            lbl_url_custom.config(text="")
+
+    def _restaurar_urls(v_mod, v_url, v_anul, lbl):
+        mod = v_mod.get().upper()
+        if mod in ENDPOINTS and mod != "CUSTOM":
+            v_url.set(ENDPOINTS[mod]["envio"])
+            v_anul.set(ENDPOINTS[mod]["anulacion"])
+            lbl.config(text="")
+
+    # Inicializar estado de los campos al abrir
+    v_modalidad.trace_add("write", _actualizar_ui_urls)
+    _actualizar_ui_urls()   # estado inicial
+
+    # Si el .ini tiene URLs personalizadas que no son CUSTOM, mostrar aviso
+    if urls_son_personalizadas(cfg) and v_modalidad.get().upper() != "CUSTOM":
+        lbl_url_custom.config(
+            text="\u26a0  Las URLs fueron modificadas manualmente en el .ini"
+        )
+        entry_url_envio.config(state="normal", fg="#000000")
+        entry_url_anulacion.config(state="normal", fg="#000000")
+        btn_restaurar.config(state="normal")
+
+    # ══ Generacion ════════════════════════════════════════════
     seccion("Generacion de comprobantes")
     r_gen = next_row()
     fr_gen = tk.Frame(fr, bg=C_BG)
     fr_gen.grid(row=r_gen, column=0, columnspan=2, sticky="w", pady=3)
-    tk.Label(fr_gen, text="\u2713  Genera TXT \u2192 valida \u2192 envia a APIFAS",
+    tk.Label(fr_gen,
+             text="\u2713  Genera TXT \u2192 valida \u2192 envia a APIFAS",
              font=("Segoe UI", 10), bg=C_BG, fg=C_VERDE).pack(anchor="w")
     tk.Label(fr_gen,
-             text="\u23f3  Conversion TXT \u2192 JSON para FFEE Platform DisateQ\u2122 (proximamente)",
+             text="\u23f3  Integracion con Plataforma DisateQ\u2122 CPE (proximamente)",
              font=("Segoe UI", 8, "italic"), bg=C_BG, fg=C_DISABLE).pack(anchor="w", pady=1)
 
-    # Espaciador final para que nada quede cortado
+    # Espaciador final
     tk.Frame(fr, bg=C_BG, height=8).grid(row=next_row(), column=0, columnspan=2)
 
-    # ── Calcular altura exacta y centrar ──
+    # ── Calcular altura y centrar ──
     win.update_idletasks()
     contenido_h = fr.winfo_reqheight()
     header_h    = hdr.winfo_reqheight()
     btns_h      = fr_btns.winfo_reqheight()
-    total_h     = contenido_h + header_h + btns_h + 40  # 40px padding
-    ancho       = 580
-    # Limitar a pantalla disponible
+    total_h     = contenido_h + header_h + btns_h + 40
+    ancho       = 600
     pantalla_h  = win.winfo_screenheight()
     alto_final  = min(total_h, pantalla_h - 80)
     win.geometry(f"{ancho}x{alto_final}")
     win.minsize(560, min(alto_final, 600))
 
-    # ── Guardar ──
+    # ── Guardar ───────────────────────────────────────────────
     def guardar():
         ruc = v_ruc.get().strip()
         if not ruc.isdigit() or len(ruc) != 11:
@@ -246,24 +343,50 @@ def abrir_wizard(parent, cfg, callback=None, primer_arranque=False):
         if not v_razon.get().strip():
             messagebox.showerror("Error", "La razon social es obligatoria.", parent=win)
             return
+
         pin = v_pin.get().strip()
         pin_existente = cfg.get("SEGURIDAD", "pin", fallback="").strip()
         if not pin and pin_existente:
             pin = pin_existente
         elif not pin.isdigit() or len(pin) != 4:
-            messagebox.showerror("Error", "El PIN debe ser exactamente 4 digitos numericos.", parent=win)
+            messagebox.showerror("Error", "El PIN debe ser exactamente 4 digitos.", parent=win)
             return
 
-        cfg.set("EMPRESA",   "ruc",              ruc)
-        cfg.set("EMPRESA",   "razon_social",      v_razon.get().strip())
-        cfg.set("EMPRESA",   "nombre_comercial",  v_nombre.get().strip())
-        cfg.set("EMPRESA",   "serie_boleta",      v_serie_b.get().strip().upper() or "B001")
-        cfg.set("EMPRESA",   "serie_factura",     v_serie_f.get().strip().upper() or "F001")
-        cfg.set("EMPRESA",   "serie_nota",        v_serie_n.get().strip().upper() or "NC01")
-        cfg.set("ENVIO",     "modalidad",         v_modalidad.get())
-        cfg.set("ENVIO",     "modo",              "legacy")
-        cfg.set("SEGURIDAD", "pin",               pin)
+        # Validar URLs si modalidad es CUSTOM
+        modalidad = v_modalidad.get().upper()
+        url_envio    = v_url_envio.get().strip()
+        url_anulacion = v_url_anulacion.get().strip()
 
+        if modalidad == "CUSTOM":
+            if not url_envio.startswith("http"):
+                messagebox.showerror(
+                    "Error", "URL de envio invalida. Debe comenzar con http:// o https://",
+                    parent=win)
+                return
+            if url_anulacion and not url_anulacion.startswith("http"):
+                messagebox.showerror(
+                    "Error", "URL de anulacion invalida. Debe comenzar con http:// o https://",
+                    parent=win)
+                return
+
+        # Guardar empresa
+        cfg.set("EMPRESA", "ruc",              ruc)
+        cfg.set("EMPRESA", "razon_social",     v_razon.get().strip())
+        cfg.set("EMPRESA", "nombre_comercial", v_nombre.get().strip())
+        cfg.set("EMPRESA", "alias",            v_alias.get().strip())
+        cfg.set("EMPRESA", "serie_boleta",     v_serie_b.get().strip().upper() or "B001")
+        cfg.set("EMPRESA", "serie_factura",    v_serie_f.get().strip().upper() or "F001")
+        cfg.set("EMPRESA", "serie_nota",       v_serie_n.get().strip().upper() or "NC01")
+
+        # Guardar envío
+        cfg.set("ENVIO", "modalidad",    modalidad)
+        cfg.set("ENVIO", "modo",         "legacy")
+        cfg.set("ENVIO", "url_envio",    url_envio)
+        cfg.set("ENVIO", "url_anulacion", url_anulacion)
+
+        cfg.set("SEGURIDAD", "pin", pin)
+
+        # Correlativos
         salida_w = cfg.get("RUTAS", "salida_txt", fallback=BASE_DIR)
         for vs, vc in [(v_serie_b, v_corr_b), (v_serie_f, v_corr_f), (v_serie_n, v_corr_n)]:
             try:
@@ -274,18 +397,24 @@ def abrir_wizard(parent, cfg, callback=None, primer_arranque=False):
             except ValueError:
                 pass
 
-        actualizar_endpoints(cfg)
+        # Nota: NO llamamos a actualizar_endpoints() aquí porque
+        # las URLs ya fueron seteadas explícitamente arriba.
         guardar_config(cfg)
         messagebox.showinfo("Guardado", "Configuracion guardada correctamente.", parent=win)
+
         if callback:
             callback()
         win.destroy()
 
-    tk.Button(fr_btns, text="Guardar", command=guardar,
-              font=("Segoe UI", 10), bg=C_AZUL, fg="white",
-              relief="flat", padx=20, pady=7,
-              cursor="hand2", bd=0).pack(side="right")
-    tk.Button(fr_btns, text="Cancelar", command=win.destroy,
-              font=("Segoe UI", 10), bg="#757575", fg="white",
-              relief="flat", padx=20, pady=7,
-              cursor="hand2", bd=0).pack(side="right", padx=8)
+    tk.Button(fr_btns, text="Guardar configuracion", command=guardar,
+              font=("Segoe UI", 10, "bold"), bg=C_VERDE, fg="white",
+              relief="flat", padx=18, pady=7, cursor="hand2", bd=0).pack(side="right")
+    tk.Button(fr_btns, text="Cancelar",
+              command=win.destroy,
+              font=("Segoe UI", 10), bg=C_BG, fg=C_GRIS,
+              relief="flat", padx=12, pady=7, cursor="hand2", bd=0).pack(side="right", padx=8)
+
+
+def _actualizar_urls_por_modalidad_factory(*_):
+    """Placeholder para compatibilidad — la lógica real está en _actualizar_ui_urls."""
+    return lambda: None

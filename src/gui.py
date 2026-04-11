@@ -26,10 +26,11 @@ def _es_cpe(nombre: str) -> bool:
 
 
 def iniciar_gui(cfg, monitor_cls, report_fn):
-    ruc          = cfg.get("EMPRESA", "ruc")
+    ruc              = cfg.get("EMPRESA", "ruc")
     razon_social     = cfg.get("EMPRESA", "razon_social")
     nombre_comercial = cfg.get("EMPRESA", "nombre_comercial", fallback="").strip()
-    serie        = cfg.get("EMPRESA", "serie", fallback="B001")
+    alias            = cfg.get("EMPRESA", "alias",            fallback="").strip()
+    serie            = cfg.get("EMPRESA", "serie", fallback="B001")
     salida       = cfg.get("RUTAS", "salida_txt")
     url_envio    = cfg.get("ENVIO", "url_envio")
 

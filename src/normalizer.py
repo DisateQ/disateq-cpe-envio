@@ -26,7 +26,6 @@ def _safe_str(valor, default="") -> str:
     if valor is None:
         return default
     if isinstance(valor, bytes):
-        # bytes nulos = campo vacio en FoxPro
         cleaned = valor.replace(b'\x00', b'').strip()
         return cleaned.decode("latin-1", errors="ignore") or default
     return str(valor).strip() or default
@@ -54,7 +53,6 @@ def _safe_fecha(valor) -> tuple:
     if valor is None:
         return fallback
 
-    # bytes nulos
     if isinstance(valor, bytes):
         if not valor.replace(b'\x00', b'').strip():
             return fallback
@@ -69,7 +67,6 @@ def _safe_fecha(valor) -> tuple:
         except Exception:
             return fallback
 
-    # string
     s = str(valor).strip()
     if not s or set(s) <= {'0', ' ', '-', '/'}:
         return fallback
@@ -163,20 +160,44 @@ def normalizar(envio: dict, items: list) -> dict:
 
     forma_pago = _forma_pago(items[0].get("FORMA_FACT", "1") if items else "1")
 
+    # ── Determinar tipo de documento SUNAT ───────────────────
+    # Notas ANTES que factura/boleta: FC03 debe detectarse como NC, no como F
+    if (tipo.upper() in ("N", "NC") or
+            serie_fmt.upper().startswith("FC") or
+            serie_fmt.upper().startswith("BC")):
+        tipo_doc_sunat = "07"   # nota crédito → APIFAS tipo 3
+    elif (tipo.upper() in ("D", "ND") or
+            serie_fmt.upper().startswith("FD") or
+            serie_fmt.upper().startswith("BD")):
+        tipo_doc_sunat = "08"   # nota débito → APIFAS tipo 3
+    elif tipo.upper().startswith("F") or serie_fmt.upper().startswith("F"):
+        tipo_doc_sunat = "01"   # factura
+    elif tipo.upper().startswith("B") or serie_fmt.upper().startswith("B"):
+        tipo_doc_sunat = "03"   # boleta
+    else:
+        tipo_doc_sunat = "01"
+
+    # ── Campos de referencia al documento original (NC/ND) ───
+    doc_mod_tipo  = _safe_str(envio.get("DOC_MOD_TIPO",  envio.get("TIPO_DOC_MOD",  "")))
+    doc_mod_serie = _safe_str(envio.get("DOC_MOD_SERIE", envio.get("SERIE_DOC_MOD", "")))
+    doc_mod_num   = _safe_str(envio.get("DOC_MOD_NUM",   envio.get("NUM_DOC_MOD",   "")))
+    tipo_nota_c   = _safe_str(envio.get("TIPO_NOTA_C",   envio.get("TIPO_NC",       "")))
+    tipo_nota_d   = _safe_str(envio.get("TIPO_NOTA_D",   envio.get("TIPO_ND",       "")))
+
     return {
         "ruc_emisor":   None,
         "razon_social": None,
-        "tipo_doc":     "03" if tipo == "B" else "01",
+        "tipo_doc":     tipo_doc_sunat,
         "serie":        serie_fmt,
         "numero":       numero,
         "fecha_str":    fecha_str,
         "fecha_iso":    fecha_iso,
         "moneda":       "PEN",
         "cliente": {
-            "tipo_doc":    "-",
-            "numero_doc":  "00000000",
-            "denominacion":"CLIENTE VARIOS",
-            "direccion":   "-",
+            "tipo_doc":     "-",
+            "numero_doc":   "00000000",
+            "denominacion": "CLIENTE VARIOS",
+            "direccion":    "-",
         },
         "totales": {
             "gravada":   total_gravada,
@@ -188,5 +209,13 @@ def normalizar(envio: dict, items: list) -> dict:
         },
         "forma_pago":     forma_pago,
         "items":          items_norm,
+        "es_nota":        tipo_doc_sunat in ("07", "08"),
+        "doc_referencia": {
+            "tipo":    doc_mod_tipo,
+            "serie":   doc_mod_serie,
+            "numero":  doc_mod_num,
+            "tipo_nc": tipo_nota_c,
+            "tipo_nd": tipo_nota_d,
+        },
         "nombre_archivo": f"{{}}-02-{serie_fmt}-{str(numero).zfill(8)}.txt",
     }

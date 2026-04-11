@@ -19,7 +19,8 @@ def _cabecera(c: dict, t: dict, cl: dict) -> list:
     """Genera las lineas de cabecera del TXT."""
     return [
         "operacion|generar_comprobante|",
-        f"tipo_de_comprobante|{2 if c['tipo_doc'] == '03' else 1}|",
+        # APIFAS: 1=factura, 2=boleta, 3=nota crédito o débito
+        f"tipo_de_comprobante|{{{'01':1,'03':2,'07':3,'08':3}.get(c.get('tipo_doc','03'),2)}}|",
         f"serie|{c['serie']}|",
         f"numero|{c['numero']}|",
         "sunat_transaction|1|",
@@ -52,11 +53,12 @@ def _cabecera(c: dict, t: dict, cl: dict) -> list:
         "total_incluido_percepcion||",
         "detraccion|false|",
         "observaciones||",
-        "documento_que_se_modifica_tipo||",
-        "documento_que_se_modifica_serie||",
-        "documento_que_se_modifica_numero||",
-        "tipo_de_nota_de_credito||",
-        "tipo_de_nota_de_debito||",
+        # Campos de referencia — poblados automáticamente para NC/ND
+        f"documento_que_se_modifica_tipo|{(c.get('doc_referencia') or {}).get('tipo', '')}|",
+        f"documento_que_se_modifica_serie|{(c.get('doc_referencia') or {}).get('serie', '')}|",
+        f"documento_que_se_modifica_numero|{(c.get('doc_referencia') or {}).get('numero', '')}|",
+        f"tipo_de_nota_de_credito|{(c.get('doc_referencia') or {}).get('tipo_nc', '')}|",
+        f"tipo_de_nota_de_debito|{(c.get('doc_referencia') or {}).get('tipo_nd', '')}|",
         "enviar_automaticamente_a_la_sunat|false|",
         "enviar_automaticamente_al_cliente|false|",
         f"condiciones_de_pago|{c['forma_pago']}|",

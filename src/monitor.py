@@ -23,7 +23,7 @@ from pathlib import Path
 from dbf_reader   import leer_pendientes, leer_productos, leer_detalles, verificar_rutas, marcar_enviado_dbf
 from normalizer   import normalizar, _safe_str
 from txt_generator import generar_txt, guardar_txt
-from sender       import enviar_txt, enviar_json, verificar_conexion from config import url_envio as get_url_envio
+from sender       import enviar_txt, enviar_json, verificar_conexion
 from report       import generar_reporte
 from correlativo_store import ya_procesado, marcar_enviado
 from txt_validator import txt_es_valido
