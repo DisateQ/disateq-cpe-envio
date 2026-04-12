@@ -9,3 +9,8 @@ build/
 ffee_config.ini
 procesados.json
 *.log
+
+build/
+dist/
+installer_output/
+*.bak*
