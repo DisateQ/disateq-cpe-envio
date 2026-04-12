@@ -40,7 +40,8 @@ def iniciar_gui(cfg, monitor_cls, report_fn):
     salida           = cfg.get("RUTAS",   "salida_txt")
     url_envio        = cfg.get("ENVIO",   "url_envio")
 
-    from config import label_modalidad, INTERVALO_BOLETA
+    from config import label_modalidad
+    from monitor import INTERVALO_BOLETA
     lbl_modalidad    = label_modalidad(cfg)
     intervalo_boleta = INTERVALO_BOLETA
 
