@@ -3,7 +3,7 @@ status_dia.py
 =============
 Genera reporte de status del dia — CPE DisateQ.
 
-Muestra y graba en status\ el detalle de envios del dia:
+Muestra y graba en status/ el detalle de envios del dia:
   serie, correlativo, fecha/hora envio, total, items, resultado.
 
 Principio S: responsabilidad unica — generar status. No envia ni lee DBF.
@@ -28,7 +28,7 @@ def _ruta_status(salida: str) -> Path:
 
 def _leer_enviados_hoy(salida: str) -> list:
     """
-    Lee los TXT de la carpeta enviados\ y extrae metadata.
+    Lee los TXT de la carpeta enviados/ y extrae metadata.
     Solo los del dia de hoy por fecha de modificacion.
     """
     carpeta = Path(salida) / "enviados"
@@ -102,7 +102,7 @@ def _extraer_totales(ruta_txt: Path) -> dict:
 
 
 def _leer_errores_hoy(salida: str) -> list:
-    """Lee TXT en errores\ del dia de hoy."""
+    """Lee TXT en errores/ del dia de hoy."""
     carpeta = Path(salida) / "errores"
     if not carpeta.exists():
         return []

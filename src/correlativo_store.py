@@ -5,7 +5,7 @@ Registro local de comprobantes ya procesados por CPE DisateQ.
 Evita reenvios sin modificar el DBF del sistema FoxPro.
 
 Guarda un archivo JSON en la carpeta de salida:
-  D:\FFEESUNAT\CPE DisateQ\procesados.json
+  D:\\FFEESUNAT\\CPE DisateQ\\procesados.json
 
 Estructura:
 {

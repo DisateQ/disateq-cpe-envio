@@ -7,9 +7,9 @@ Permite distinguir exactamente QUE fallo y DONDE,
 en vez de capturar Exception generica en todos lados.
 
                     BridgeError
-                   /           \
+                   /           \\
           DBFError               EnvioError
-         /        \             /          \
+         /        \\             /          \\
   DBFNotFound  DBFCorrupto  ConexionError  RespuestaError
                                                |
                                           TimeoutError
