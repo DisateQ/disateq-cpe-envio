@@ -37,6 +37,7 @@ _setup_path()
 # ──────────────────────────────────────────────────────────
 
 from config import leer_config, config_completa, label_modalidad
+from license_manager import verificar_licencia, mostrar_error_licencia, generar_fingerprint, LicenciaError
 
 
 def init_logging(log_file: str):
@@ -86,9 +87,25 @@ def main():
     parser.add_argument("--reporte",    action="store_true")
     parser.add_argument("--modalidad",  choices=["OSE", "SEE"])
     parser.add_argument("--modo",       choices=["legacy", "json"])
+    parser.add_argument("--fingerprint", action="store_true",
+                        help="Muestra el fingerprint de este equipo y termina")
     args = parser.parse_args()
 
+    # Mostrar fingerprint si se solicita
+    if args.fingerprint:
+        fp = generar_fingerprint()
+        from license_manager import mostrar_fingerprint
+        mostrar_fingerprint(fp)
+        return
+
     if not _verificar_instancia_unica():
+        return
+
+    # Verificar licencia
+    try:
+        verificar_licencia()
+    except LicenciaError as e:
+        mostrar_error_licencia(str(e))
         return
 
     cfg = leer_config()
