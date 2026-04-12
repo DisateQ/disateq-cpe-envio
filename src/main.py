@@ -51,6 +51,33 @@ def init_logging(log_file: str):
     )
 
 
+
+def _verificar_instancia_unica() -> bool:
+    """
+    Verifica que no haya otra instancia de CPE DisateQ corriendo.
+    Usa un Mutex de Windows para garantizar instancia unica.
+    Retorna True si es la unica instancia, False si ya hay otra corriendo.
+    """
+    try:
+        import ctypes
+        mutex = ctypes.windll.kernel32.CreateMutexW(None, False, "CPEDisateQ_Mutex_v2")
+        if ctypes.windll.kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
+            import tkinter as tk
+            from tkinter import messagebox
+            root = tk.Tk()
+            root.withdraw()
+            messagebox.showwarning(
+                "CPE DisateQ\u2122",
+                "CPE DisateQ\u2122 ya est\u00e1 en ejecuci\u00f3n.\n\n"
+                "Revisa la barra de tareas o el \u00e1rea de notificaciones."
+            )
+            root.destroy()
+            return False
+        return True
+    except Exception:
+        return True  # Si falla la verificacion, permitir arranque
+
+
 def main():
     parser = argparse.ArgumentParser(
         description=f"DisateQ Bridge\u2122 v{VERSION} \u2014 @fhertejada\u2122 \u00b7 DisateQ\u2122")
@@ -60,6 +87,9 @@ def main():
     parser.add_argument("--modalidad",  choices=["OSE", "SEE"])
     parser.add_argument("--modo",       choices=["legacy", "json"])
     args = parser.parse_args()
+
+    if not _verificar_instancia_unica():
+        return
 
     cfg = leer_config()
 
