@@ -224,3 +224,8 @@ def mostrar_error_licencia(mensaje: str):
         root.destroy()
     except Exception:
         print(f"ERROR LICENCIA: {mensaje}")
+
+
+if __name__ == '__main__':
+    fp = generar_fingerprint()
+    mostrar_fingerprint(fp)
