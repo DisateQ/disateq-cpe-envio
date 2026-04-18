@@ -43,7 +43,7 @@ echo.
 
 :: ── Instalar dependencias ─────────────────────────────────
 echo  Instalando dependencias...
-%PYTHON% -m pip install pyinstaller requests dbfread --quiet --upgrade
+%PYTHON% -m pip install pyinstaller requests dbfread openpyxl cryptography --quiet --upgrade
 if %errorlevel% neq 0 (
     echo  [ERROR] Fallo al instalar dependencias.
     pause & exit /b 1
