@@ -61,9 +61,9 @@ DEFAULTS = {
     },
     "CORRELATIVO": {},
     "FUENTE": {
-        "tipo":       "dbf",
-        "ruta_xlsx":  "",
-        "cadena_sql": "",
+        "tipo":              "dbf",
+        "ruta_principal":    "",
+        "rutas_secundarias": "",
     },
     "ALERTAS": {
         "whatsapp_activo":    "NO",

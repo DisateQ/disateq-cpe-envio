@@ -95,11 +95,13 @@ def _campo(parent, label, valor_ini, show="", row=0):
              row=row, column=1, sticky="ew", pady=5, padx=(0, 12))
     return var
 
+
 def _nota(parent, texto, row=0):
     tk.Label(parent, text=texto, font=("Segoe UI", 8, "italic"),
              bg=C_WHITE, fg=C_DISABLE, anchor="w").grid(
              row=row, column=0, columnspan=2, sticky="w",
              pady=(0, 4), padx=12)
+
 
 def _seccion_lbl(parent, texto, row=0):
     f = tk.Frame(parent, bg=C_HEADER)
@@ -115,8 +117,8 @@ def abrir_wizard(parent, cfg, callback=None, primer_arranque=False):
 
     win = tk.Toplevel(parent)
     win.title("Configuracion \u2014 CPE DisateQ\u2122")
-    win.geometry("580x520")
-    win.minsize(560, 480)
+    win.geometry("580x560")
+    win.minsize(560, 500)
     win.resizable(True, True)
     win.configure(bg=C_BG)
     win.grab_set()
@@ -127,8 +129,8 @@ def abrir_wizard(parent, cfg, callback=None, primer_arranque=False):
     sw = win.winfo_screenwidth()
     sh = win.winfo_screenheight()
     x  = (sw - 580) // 2
-    y  = (sh - 520) // 2
-    win.geometry(f"580x520+{x}+{y}")
+    y  = (sh - 560) // 2
+    win.geometry(f"580x560+{x}+{y}")
 
     hdr = tk.Frame(win, bg=C_HEADER)
     hdr.pack(fill="x")
@@ -316,7 +318,7 @@ def abrir_wizard(parent, cfg, callback=None, primer_arranque=False):
     tab4.columnconfigure(1, weight=1)
     nb.add(tab4, text="  Fuente  ")
 
-    _seccion_lbl(tab4, "Origen de datos", row=0)
+    _seccion_lbl(tab4, "Formato fuente de datos", row=0)
 
     tk.Label(tab4, text="Tipo de fuente", font=("Segoe UI", 10),
              bg=C_WHITE, fg=C_GRIS, anchor="w").grid(
@@ -326,30 +328,65 @@ def abrir_wizard(parent, cfg, callback=None, primer_arranque=False):
     fr_fuente = tk.Frame(tab4, bg=C_WHITE)
     fr_fuente.grid(row=1, column=1, sticky="w", pady=6)
 
-    for val, lbl in [("dbf", "DBF / FoxPro"), ("xlsx", "Excel (_CPE)"), ("sql", "SQL (proximamente)")]:
+    for val, lbl in [("dbf", "DBF / FoxPro"), ("xlsx", "Excel (.xlsx)"), ("sql", "SQL (proximamente)")]:
         estado = "normal" if val != "sql" else "disabled"
         tk.Radiobutton(fr_fuente, text=lbl, variable=v_fuente, value=val,
                        font=("Segoe UI", 10), bg=C_WHITE,
                        state=estado).pack(side="left", padx=(0, 16))
 
-    _nota(tab4, "DBF: sistema FoxPro legacy.  Excel: DisateQ POS exporta hoja _CPE.", row=2)
+    _nota(tab4, "Formato en que el sistema legacy almacena sus datos.", row=2)
 
-    _seccion_lbl(tab4, "Configuracion DBF", row=3)
-    v_ruta_dbf = _campo(tab4, "Carpeta DBF",
-                        cfg.get("RUTAS", "data_dbf", fallback=r"C:\Sistemas\data"),
-                        row=4)
-    _nota(tab4, r"Ejemplo: C:\Sistemas\data", row=5)
+    _seccion_lbl(tab4, "Ruta de datos", row=3)
 
-    _seccion_lbl(tab4, "Configuracion Excel", row=6)
-    v_ruta_xlsx = _campo(tab4, "Archivo _CPE (.xlsx)",
-                         cfg.get("FUENTE", "ruta_xlsx", fallback=""),
-                         row=7)
-    _nota(tab4, r"Ejemplo: C:\POS\exportaciones\cpe.xlsx", row=8)
+    v_ruta_principal = _campo(tab4, "Ruta principal",
+                              cfg.get("FUENTE", "ruta_principal", fallback=""),
+                              row=4)
+    _nota(tab4, "Carpeta o archivo principal donde estan los datos del sistema legacy.", row=5)
+
+    _seccion_lbl(tab4, "Rutas secundarias (opcional)", row=6)
+
+    fr_secundarias = tk.Frame(tab4, bg=C_WHITE)
+    fr_secundarias.grid(row=7, column=0, columnspan=2, sticky="ew", padx=12, pady=4)
+    fr_secundarias.columnconfigure(0, weight=1)
+
+    rutas_guardadas = [r.strip() for r in
+                       cfg.get("FUENTE", "rutas_secundarias", fallback="").split("|")
+                       if r.strip()]
+
+    _vars_secundarias = []
+
+    def _agregar_ruta_secundaria(valor=""):
+        fila = len(_vars_secundarias)
+        var = tk.StringVar(value=valor)
+        _vars_secundarias.append(var)
+        fr = tk.Frame(fr_secundarias, bg=C_WHITE)
+        fr.grid(row=fila, column=0, sticky="ew", pady=2)
+        fr.columnconfigure(0, weight=1)
+        tk.Entry(fr, textvariable=var, font=("Segoe UI", 10),
+                 relief="solid", bd=1).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        tk.Button(fr, text="  -  ", command=lambda f=fr, v=var: _eliminar_ruta(f, v),
+                  font=("Segoe UI", 9), bg=C_ROJO, fg="white",
+                  relief="flat", cursor="hand2", bd=0).grid(row=0, column=1)
+
+    def _eliminar_ruta(fr, var):
+        if var in _vars_secundarias:
+            _vars_secundarias.remove(var)
+        fr.destroy()
+
+    for r in rutas_guardadas:
+        _agregar_ruta_secundaria(r)
+
+    tk.Button(tab4, text="+ Agregar ruta", command=_agregar_ruta_secundaria,
+              font=("Segoe UI", 9), bg=C_AZUL, fg="white",
+              relief="flat", padx=10, pady=4, cursor="hand2", bd=0).grid(
+              row=8, column=0, columnspan=2, sticky="w", padx=12, pady=(4, 0))
+
+    _nota(tab4, "Si los archivos estan en carpetas distintas, agregar una ruta por carpeta.", row=9)
 
     tk.Label(tab4,
              text="SQL Server / PostgreSQL / Oracle — disponible en version futura",
              font=("Segoe UI", 8, "italic"), bg=C_WHITE, fg=C_DISABLE).grid(
-             row=9, column=0, columnspan=2, sticky="w", padx=16, pady=(12, 0))
+             row=10, column=0, columnspan=2, sticky="w", padx=16, pady=(8, 0))
 
     # ── Guardar ───────────────────────────────────────────────
     def guardar():
@@ -396,8 +433,10 @@ def abrir_wizard(parent, cfg, callback=None, primer_arranque=False):
         cfg.set("ENVIO",     "url_anulacion", url_anulacion)
         cfg.set("SEGURIDAD", "pin",           pin)
         cfg.set("FUENTE",    "tipo",          v_fuente.get())
-        cfg.set("RUTAS",     "data_dbf",      v_ruta_dbf.get().strip())
-        cfg.set("FUENTE",    "ruta_xlsx",     v_ruta_xlsx.get().strip())
+        cfg.set("FUENTE",    "ruta_principal", v_ruta_principal.get().strip())
+        cfg.set("FUENTE",    "rutas_secundarias", "|".join(
+            v.get().strip() for v in _vars_secundarias if v.get().strip()
+        ))
 
         salida_w = cfg.get("RUTAS", "salida_txt", fallback=BASE_DIR)
         for tipo, ws in [("boleta", ws_b), ("factura", ws_f), ("nota", ws_n)]:

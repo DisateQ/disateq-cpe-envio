@@ -26,7 +26,7 @@ from sender        import enviar_txt, verificar_conexion
 from report        import generar_reporte
 from correlativo_store import ya_procesado, marcar_enviado
 from txt_validator import txt_es_valido
-from adapters.dispatcher import get_adapter
+from adapters.dispatcher import get_adapter, get_ruta
 from adapters.base_adapter import AdapterError
 from exceptions import (
     CPEError, DBFError, DBFNotFound, DBFCorrupto,
@@ -219,12 +219,7 @@ class Monitor:
             return
 
         # Determinar ruta segun fuente
-        if fuente == "dbf":
-            ruta = self.cfg.get("RUTAS", "data_dbf")
-        elif fuente == "xlsx":
-            ruta = self.cfg.get("FUENTE", "ruta_xlsx")
-        else:
-            ruta = self.cfg.get("FUENTE", "cadena_sql", fallback="")
+        ruta = get_ruta(self.cfg)
 
         # Leer pendientes desde el adaptador
         try:

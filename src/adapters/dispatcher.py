@@ -4,12 +4,12 @@ adapters/dispatcher.py
 Dispatcher de adaptadores — DisateQ CPE™.
 
 Decide qué adaptador usar según la configuración del sistema.
-monitor.py llama a get_adapter() y recibe el adaptador correcto
-sin saber nada del formato de origen.
+Construye la ruta combinada (principal + secundarias) y la
+entrega al adaptador correspondiente.
 
 Fuentes soportadas:
-  dbf   — FoxPro/DBF (default)
-  xlsx  — Excel _CPE (DisateQ POS™)
+  dbf   — FoxPro/DBF
+  xlsx  — Excel _CPE
   sql   — SQL Server / PostgreSQL / SQLite (futuro)
   mdb   — Access MDB (futuro)
   odbc  — ODBC genérico (futuro)
@@ -21,11 +21,20 @@ from adapters.base_adapter import AdapterError
 
 log = logging.getLogger(__name__)
 
-# Fuentes disponibles actualmente
 _FUENTES_DISPONIBLES = ("dbf", "xlsx")
+_FUENTES_FUTURAS     = ("sql", "mdb", "odbc", "sqlserver", "oracle", "db2")
 
-# Fuentes planificadas pero no implementadas
-_FUENTES_FUTURAS = ("sql", "mdb", "odbc", "sqlserver", "oracle", "db2")
+
+def _construir_ruta(cfg: ConfigParser) -> str:
+    """
+    Construye la ruta completa combinando ruta_principal y rutas_secundarias.
+    Retorna string con rutas separadas por '|'.
+    """
+    principal   = cfg.get("FUENTE", "ruta_principal",    fallback="").strip()
+    secundarias = cfg.get("FUENTE", "rutas_secundarias", fallback="").strip()
+
+    rutas = [r.strip() for r in [principal] + secundarias.split("|") if r.strip()]
+    return "|".join(rutas)
 
 
 def get_adapter(cfg: ConfigParser):
@@ -33,7 +42,7 @@ def get_adapter(cfg: ConfigParser):
     Retorna el adaptador configurado.
 
     Args:
-        cfg: ConfigParser con la configuración del sistema
+        cfg: ConfigParser con la configuracion del sistema
 
     Returns:
         Instancia del adaptador correspondiente
@@ -49,13 +58,13 @@ def get_adapter(cfg: ConfigParser):
         return DBFAdapter()
 
     if fuente == "xlsx":
-        from adapters.xlsx_adapter import leer
-        log.info("Dispatcher: usando xlsx_adapter")
-        return leer  # función directa, no clase
+        from adapters.xlsx_adapter import XlsxAdapter
+        log.info("Dispatcher: usando XlsxAdapter")
+        return XlsxAdapter()
 
     if fuente in _FUENTES_FUTURAS:
         raise AdapterError(
-            f"Fuente '{fuente}' está en el roadmap pero aún no implementada.\n"
+            f"Fuente '{fuente}' esta en el roadmap pero aun no implementada.\n"
             f"Fuentes disponibles: {', '.join(_FUENTES_DISPONIBLES)}"
         )
 
@@ -65,11 +74,16 @@ def get_adapter(cfg: ConfigParser):
     )
 
 
+def get_ruta(cfg: ConfigParser) -> str:
+    """
+    Retorna la ruta combinada (principal + secundarias) para el adaptador.
+    """
+    return _construir_ruta(cfg)
+
+
 def fuentes_disponibles() -> list[str]:
-    """Retorna lista de fuentes actualmente operativas."""
     return list(_FUENTES_DISPONIBLES)
 
 
 def fuentes_futuras() -> list[str]:
-    """Retorna lista de fuentes planificadas."""
     return list(_FUENTES_FUTURAS)
