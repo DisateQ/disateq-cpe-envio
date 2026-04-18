@@ -5,8 +5,8 @@ Orquestador del ciclo de envio de CPE.
 
 Principios SOLID:
   S — Orquesta el flujo. La logica de cada paso esta en su modulo.
-  O — Agregar nuevo paso (ej: notificacion) no modifica _procesar_comprobante.
-  D — Depende de interfaces (funciones importadas), no instancia nada directamente.
+  O — Agregar nuevo paso no modifica _procesar_comprobante.
+  D — Depende de interfaces (dispatcher), no de implementaciones concretas.
 
 Manejo de errores:
   Captura excepciones TIPADAS de cada capa y las reporta con contexto preciso.
@@ -20,14 +20,15 @@ import queue
 from datetime import date
 from pathlib import Path
 
-from dbf_reader   import leer_pendientes, leer_productos, leer_detalles, verificar_rutas, marcar_enviado_dbf
-from normalizer   import normalizar, _safe_str
+from normalizer    import normalizar, _safe_str
 from txt_generator import generar_txt, guardar_txt
-from sender       import enviar_txt, enviar_json, verificar_conexion
-from report       import generar_reporte
+from sender        import enviar_txt, verificar_conexion
+from report        import generar_reporte
 from correlativo_store import ya_procesado, marcar_enviado
 from txt_validator import txt_es_valido
-from exceptions   import (
+from adapters.dispatcher import get_adapter
+from adapters.base_adapter import AdapterError
+from exceptions import (
     CPEError, DBFError, DBFNotFound, DBFCorrupto,
     GeneracionError, EnvioError, ConexionError, RespuestaError
 )
@@ -44,10 +45,21 @@ def _es_factura(serie: str) -> bool:
     return str(serie).upper().startswith("F")
 
 
+def _cpe_tipo(tipo: str, serie_fmt: str) -> str:
+    tipo_upper = tipo.upper()
+    if tipo_upper in ("N", "NC") or serie_fmt.upper().startswith(("FC", "NC", "BC")):
+        return "NOTA CREDITO"
+    if tipo_upper in ("D", "ND") or serie_fmt.upper().startswith(("FD", "ND", "BD")):
+        return "NOTA DEBITO"
+    if tipo_upper == "F" or serie_fmt.upper().startswith("F"):
+        return "FACTURA"
+    return "BOLETA"
+
+
 class Monitor:
     """
     Orquesta el ciclo completo:
-      leer DBF → filtrar → normalizar → generar → enviar → registrar
+      Adaptador (DBF/xlsx/SQL) → normalizar → generar → enviar → registrar
     """
 
     def __init__(self, cfg, gui_queue: queue.Queue = None):
@@ -78,15 +90,7 @@ class Monitor:
         serie     = _safe_str(envio.get("SERIE_FACT"), "001").zfill(3)
         numero    = _safe_str(envio.get("NUMERO_FAC"), "0")
         serie_fmt = f"{tipo}{serie}"
-        tipo_upper = tipo.upper()
-        if tipo_upper in ("N", "NC") or serie_fmt.upper().startswith(("FC", "NC", "BC")):
-            cpe_tipo = "NOTA CREDITO"
-        elif tipo_upper in ("D", "ND") or serie_fmt.upper().startswith(("FD", "ND", "BD")):
-            cpe_tipo = "NOTA DEBITO"
-        elif tipo_upper == "F" or serie_fmt.upper().startswith("F"):
-            cpe_tipo = "FACTURA"
-        else:
-            cpe_tipo = "BOLETA"
+        cpe_tipo  = _cpe_tipo(tipo, serie_fmt)
         ruc       = self.cfg.get("EMPRESA", "ruc")
         nombre_arc = f"{ruc}-02-{serie_fmt}-{numero.zfill(8)}.txt"
 
@@ -107,7 +111,7 @@ class Monitor:
 
         razon_social = self.cfg.get("EMPRESA", "razon_social")
         modo         = self.cfg.get("ENVIO", "modo", fallback="legacy")
-        url_envio    = get_url_envio(self.cfg)
+        url_envio    = self.cfg.get("ENVIO", "url_envio")
         salida       = self.cfg.get("RUTAS", "salida_txt")
 
         Path(salida).mkdir(parents=True, exist_ok=True)
@@ -116,7 +120,6 @@ class Monitor:
         try:
             nombre, contenido = generar_txt(comp, ruc, razon_social)
             guardar_txt(nombre, contenido, salida)
-            # Validar TXT antes de enviar
             valido, errores_txt = txt_es_valido(contenido)
             if not valido:
                 resumen = "; ".join(errores_txt[:3])
@@ -141,7 +144,7 @@ class Monitor:
             self._log(f"SIN CONEXION — {nombre}: {e}", "error")
             self._emit({"tipo": "evento", "estado": "error",
                         "nombre": nombre, "cpe_tipo": cpe_tipo,
-                        "msg": "Sin conexión a APIFAS"})
+                        "msg": "Sin conexion a APIFAS"})
             self._mover_txt(salida, nombre, modo, destino="errores")
             return
 
@@ -163,29 +166,20 @@ class Monitor:
 
         # Exito
         self._mover_txt(salida, nombre, "legacy", destino="enviados")
-
-        # Marcar en procesados.json (control de correlativos del Bridge)
         try:
             marcar_enviado(salida, serie_fmt, int(numero))
         except Exception:
             pass
 
-        # Marcar FLAG_ENVIO=3 en enviosffee.dbf para que FoxPro sepa
-        # que el comprobante ya fue enviado a SUNAT y no lo reintente.
-        # Falla silenciosamente — nunca bloquea el flujo principal.
-        try:
-            ruta_data = self.cfg.get("RUTAS", "data_dbf")
-            ok_dbf = marcar_enviado_dbf(ruta_data, tipo, serie, numero)
-            if ok_dbf:
-                log.debug(f"FLAG_ENVIO=3 marcado en DBF: {serie_fmt}-{numero}")
-            else:
-                log.warning(
-                    f"No se pudo marcar FLAG_ENVIO=3 en DBF para "
-                    f"{serie_fmt}-{numero} — el registro puede ser reprocesado "
-                    f"por FoxPro si reinicia el sistema."
-                )
-        except Exception as e:
-            log.warning(f"Error al marcar FLAG_ENVIO en DBF: {e}")
+        # Marcar FLAG_ENVIO=3 en DBF si la fuente es DBF
+        fuente = self.cfg.get("FUENTE", "tipo", fallback="dbf").lower()
+        if fuente == "dbf":
+            try:
+                from dbf_reader import marcar_enviado_dbf
+                ruta_data = self.cfg.get("RUTAS", "data_dbf")
+                marcar_enviado_dbf(ruta_data, tipo, serie, numero)
+            except Exception as e:
+                log.warning(f"No se pudo marcar FLAG_ENVIO en DBF: {e}")
 
         monto_enviado = float(comp["totales"]["total"])
         tipo_doc_env  = comp.get("tipo_doc", "03")
@@ -196,7 +190,6 @@ class Monitor:
         time.sleep(DELAY_ENTRE_ENVIOS)
 
     def _mover_txt(self, salida: str, nombre: str, modo: str, destino: str):
-        """Mueve el TXT generado a enviados/ o errores/."""
         if modo != "legacy":
             return
         try:
@@ -211,124 +204,6 @@ class Monitor:
     # ── Ciclo principal ──────────────────────────────────────
 
     def _ciclo(self, forzar_boletas: bool = False, verbose: bool = False):
-        ruta_data = self.cfg.get("RUTAS", "data_dbf")
         salida    = self.cfg.get("RUTAS", "salida_txt")
         url_envio = self.cfg.get("ENVIO", "url_envio")
-
-        # Verificar rutas antes de intentar leer
-        ok, msg_v = verificar_rutas(ruta_data)
-        if not ok:
-            self._log(f"ERROR rutas DBF: {msg_v}", "error")
-            self._emit({"tipo": "conexion", "ok": False})
-            return
-
-        # Verificar conexion a APIFAS
-        self._emit({"tipo": "conexion", "ok": verificar_conexion(url_envio)})
-
-        # Leer DBF con manejo especifico por tipo de error
-        try:
-            pendientes = leer_pendientes(ruta_data)
-            productos  = leer_productos(ruta_data)
-            detalles   = leer_detalles(ruta_data, productos)
-
-        except DBFNotFound as e:
-            self._log(f"ARCHIVO NO ENCONTRADO: {e}", "error")
-            return
-
-        except DBFCorrupto as e:
-            self._log(
-                f"ARCHIVO CORRUPTO O BLOQUEADO: {e.archivo}\n"
-                f"  Causa: {e.causa}\n"
-                f"  Posibles soluciones:\n"
-                f"  — Verificar que el sistema de farmacia no este usando el archivo\n"
-                f"  — Restaurar desde backup si el archivo esta danado", "error")
-            return
-
-        except DBFError as e:
-            self._log(f"ERROR DBF: {e}", "error")
-            return
-
-        # Filtrar ya procesados
-        def _no_procesado(p):
-            tipo      = _safe_str(p.get("TIPO_FACTU"), "B")
-            serie     = _safe_str(p.get("SERIE_FACT"), "001").zfill(3)
-            serie_fmt = f"{tipo}{serie}"
-            try:
-                numero = int(_safe_str(p.get("NUMERO_FAC"), "0"))
-            except ValueError:
-                return True
-            return not ya_procesado(salida, serie_fmt, numero)
-
-        pendientes = [p for p in pendientes if _no_procesado(p)]
-        facturas   = [p for p in pendientes if _es_factura(str(p.get("SERIE_FACT", "")))]
-        boletas    = [p for p in pendientes if not _es_factura(str(p.get("SERIE_FACT", "")))]
-
-        total = len(facturas) + len(boletas)
-        if total == 0:
-            if verbose:
-                self._log("Sin comprobantes pendientes.", "info")
-            self._emit({"tipo": "contadores", "pendientes": 0})
-            return
-
-        self._log(
-            f"Pendientes: {total}  [{len(facturas)} facturas / {len(boletas)} boletas]"
-            f"  — lote de hasta {LOTE_MAXIMO}", "info")
-
-        # Facturas: siempre inmediato
-        for envio in facturas[:LOTE_MAXIMO]:
-            if self.stop.is_set():
-                return
-            self._procesar_comprobante(envio, detalles)
-
-        # Boletas: timer o forzado
-        ahora = time.time()
-        if boletas:
-            if forzar_boletas or (ahora - self._ultimo_boleta) >= INTERVALO_BOLETA:
-                lote = boletas[:LOTE_MAXIMO]
-                resto = len(boletas) - len(lote)
-                self._log(
-                    f"Enviando {len(lote)} boleta(s)"
-                    + (f" — quedan {resto} para el siguiente ciclo" if resto else ""), "info")
-                for envio in lote:
-                    if self.stop.is_set():
-                        return
-                    self._procesar_comprobante(envio, detalles)
-                self._ultimo_boleta = ahora
-            else:
-                resta = int(INTERVALO_BOLETA - (ahora - self._ultimo_boleta))
-                self._log(f"{len(boletas)} boleta(s) — proximo ciclo en {resta}s", "info")
-
-        # Actualizar contador
-        try:
-            self._emit({"tipo": "contadores",
-                        "pendientes": len(leer_pendientes(ruta_data))})
-        except DBFError:
-            pass
-
-        # Reporte diario
-        hoy = date.today()
-        if hoy != self._ultimo_reporte:
-            try:
-                rpt = generar_reporte(Path(salida))
-                self._log(f"Reporte diario: {rpt.name}", "info")
-            except Exception:
-                pass
-            self._ultimo_reporte = hoy
-
-    def ciclo_manual(self):
-        """Boton 'Enviar ahora' — fuerza boletas tambien."""
-        self._ciclo(forzar_boletas=True, verbose=True)
-
-    def iniciar(self):
-        self._log("Monitor iniciado — ciclo automatico activo", "info")
-        while not self.stop.is_set():
-            try:
-                self._ciclo(forzar_boletas=False)
-            except Exception as e:
-                # Captura residual — no deberia llegar aqui si los modulos
-                # manejan sus propias excepciones correctamente
-                self._log(f"Error inesperado en ciclo: {type(e).__name__}: {e}", "error")
-            self.stop.wait(INTERVALO_CHECK)
-
-    def detener(self):
-        self.stop.set()
+        fuente    =
