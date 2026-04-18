@@ -219,3 +219,152 @@ def normalizar(envio: dict, items: list) -> dict:
         },
         "nombre_archivo": f"{{}}-02-{serie_fmt}-{str(numero).zfill(8)}.txt",
     }
+
+# ── normalizar_desde_cpe() — Funcion hermana para DisateQ POS™ ──
+# Decision de diseño Abril 2026
+
+from exceptions import ConfigError
+
+
+_CABECERA_REQUERIDA = [
+    "tipo_doc", "serie", "numero", "fecha_emision",
+    "total_gravada", "total_exonerada", "total_inafecta",
+    "total_igv", "total_icbper", "total",
+]
+
+_ITEM_REQUERIDO = [
+    "codigo", "descripcion", "unidad", "cantidad",
+    "precio_con_igv", "precio_sin_igv", "subtotal_sin_igv",
+    "igv", "total", "afectacion_igv",
+]
+
+
+def _validar_presencia(datos: dict, campos: list, contexto: str):
+    """Lanza ConfigError si falta algun campo obligatorio."""
+    faltantes = [c for c in campos if c not in datos or datos[c] is None]
+    if faltantes:
+        raise ConfigError(
+            contexto,
+            f"campos obligatorios ausentes: {', '.join(faltantes)}"
+        )
+
+
+def _validar_tipo_doc(tipo_doc: str):
+    if tipo_doc not in ("01", "03"):
+        raise ConfigError(
+            "tipo_doc",
+            f"valor invalido '{tipo_doc}' — esperado '01' (factura) o '03' (boleta)"
+        )
+
+
+def _validar_afectacion(afectacion: str, item_n: int):
+    if afectacion not in ("10", "20", "30", "40"):
+        raise ConfigError(
+            f"item[{item_n}].afectacion_igv",
+            f"valor invalido '{afectacion}' — esperado 10, 20, 30 o 40"
+        )
+
+
+def _fecha_str_a_iso(fecha_ddmmyyyy: str) -> str:
+    """Convierte 'DD-MM-YYYY' a 'YYYY-MM-DD'."""
+    try:
+        d, m, a = fecha_ddmmyyyy.split("-")
+        return f"{a}-{m}-{d}"
+    except Exception:
+        return date.today().strftime("%Y-%m-%d")
+
+
+def normalizar_desde_cpe(cabecera: dict, items: list) -> dict:
+    """
+    Normaliza un comprobante proveniente del xlsx_adapter de DisateQ POS™.
+
+    A diferencia de normalizar(), esta funcion confia en los valores
+    calculados por POS — no re-deriva precios ni totales.
+    Solo valida presencia de campos obligatorios y tipos basicos.
+
+    Args:
+        cabecera: dict con campos del comprobante (de xlsx_adapter.leer)
+        items:    list[dict] con detalle (de xlsx_adapter.leer)
+
+    Returns:
+        sale_dict con el mismo shape que normalizar() para compatibilidad
+        total con el flujo json_builder / txt_generator / sender.
+
+    Raises:
+        ConfigError si faltan campos obligatorios o los tipos son invalidos
+    """
+    # Validar cabecera
+    _validar_presencia(cabecera, _CABECERA_REQUERIDA, "cabecera")
+    _validar_tipo_doc(_safe_str(cabecera.get("tipo_doc")))
+
+    if not items:
+        raise ConfigError("items", "el comprobante no tiene items")
+
+    # Validar cada item
+    for i, item in enumerate(items):
+        _validar_presencia(item, _ITEM_REQUERIDO, f"item[{i}]")
+        _validar_afectacion(_safe_str(item.get("afectacion_igv")), i)
+
+    # ── Construir dict de salida (mismo shape que normalizar()) ──
+
+    tipo_doc  = _safe_str(cabecera.get("tipo_doc"))
+    serie     = _safe_str(cabecera.get("serie"))
+    numero    = int(cabecera.get("numero", 0))
+    fecha_str = _safe_str(cabecera.get("fecha_emision"))   # DD-MM-YYYY
+    fecha_iso = _fecha_str_a_iso(fecha_str)
+
+    items_norm = []
+    for item in items:
+        items_norm.append({
+            "codigo":           _safe_str(item.get("codigo"), "000"),
+            "descripcion":      _safe_str(item.get("descripcion"), "SIN DESCRIPCION").upper(),
+            "unspsc":           _safe_str(item.get("unspsc"), "10000000"),
+            "unidad":           _safe_str(item.get("unidad"), "NIU"),
+            "cantidad":         float(item.get("cantidad", 1)),
+            "precio_con_igv":   _d(item.get("precio_con_igv")),
+            "precio_sin_igv":   _d(item.get("precio_sin_igv")),
+            "subtotal_sin_igv": _d(item.get("subtotal_sin_igv")),
+            "igv":              _d(item.get("igv")),
+            "total":            _d(item.get("total")),
+            "afectacion_igv":   _safe_str(item.get("afectacion_igv"), "10"),
+            "icbper":           False,
+            "exonerado":        _safe_str(item.get("afectacion_igv")) in ("20", "30"),
+        })
+
+    forma_pago = _safe_str(cabecera.get("forma_pago"), "Contado")
+
+    return {
+        "ruc_emisor":   None,
+        "razon_social": None,
+        "tipo_doc":     tipo_doc,
+        "serie":        serie,
+        "numero":       numero,
+        "fecha_str":    fecha_str,
+        "fecha_iso":    fecha_iso,
+        "moneda":       _safe_str(cabecera.get("moneda"), "PEN"),
+        "cliente": {
+            "tipo_doc":    _safe_str(cabecera.get("cliente_tipo_doc"), "-"),
+            "numero_doc":  _safe_str(cabecera.get("cliente_numero_doc"), "00000000"),
+            "denominacion":_safe_str(cabecera.get("cliente_denominacion"), "CLIENTE VARIOS"),
+            "direccion":   _safe_str(cabecera.get("cliente_direccion"), "-"),
+        },
+        "totales": {
+            "gravada":   _d(cabecera.get("total_gravada")),
+            "exonerada": _d(cabecera.get("total_exonerada")),
+            "inafecta":  _d(cabecera.get("total_inafecta")),
+            "igv":       _d(cabecera.get("total_igv")),
+            "icbper":    _d(cabecera.get("total_icbper")),
+            "total":     _d(cabecera.get("total")),
+        },
+        "forma_pago":     forma_pago,
+        "items":          items_norm,
+        "es_nota":        False,
+        "doc_referencia": {
+            "tipo":    "",
+            "serie":   "",
+            "numero":  "",
+            "tipo_nc": "",
+            "tipo_nd": "",
+        },
+        "nombre_archivo": f"{{}}-02-{serie}-{str(numero).zfill(8)}.txt",
+    }
