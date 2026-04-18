@@ -206,4 +206,129 @@ class Monitor:
     def _ciclo(self, forzar_boletas: bool = False, verbose: bool = False):
         salida    = self.cfg.get("RUTAS", "salida_txt")
         url_envio = self.cfg.get("ENVIO", "url_envio")
-        Get-Content src\config_wizard.py | Select-String "Guardar" | Select-Object LineNumber, Linefuente    = self.cfg.get("FUENTE", "tipo", fallback="dbf").lower()
+        fuente    = self.cfg.get("FUENTE", "tipo", fallback="dbf").lower()
+
+        # Verificar conexion a APIFAS
+        self._emit({"tipo": "conexion", "ok": verificar_conexion(url_envio)})
+
+        # Obtener adaptador segun fuente configurada
+        try:
+            adapter = get_adapter(self.cfg)
+        except AdapterError as e:
+            self._log(f"ERROR adaptador: {e}", "error")
+            return
+
+        # Determinar ruta segun fuente
+        if fuente == "dbf":
+            ruta = self.cfg.get("RUTAS", "data_dbf")
+        elif fuente == "xlsx":
+            ruta = self.cfg.get("FUENTE", "ruta_xlsx")
+        else:
+            ruta = self.cfg.get("FUENTE", "cadena_sql", fallback="")
+
+        # Leer pendientes desde el adaptador
+        try:
+            resultado = adapter.leer(ruta)
+        except AdapterError as e:
+            self._log(f"ERROR rutas {fuente.upper()}: {e}", "error")
+            self._emit({"tipo": "conexion", "ok": False})
+            return
+        except Exception as e:
+            self._log(f"ERROR inesperado en adaptador: {e}", "error")
+            return
+
+        if not resultado:
+            if verbose:
+                self._log("Sin comprobantes pendientes.", "info")
+            self._emit({"tipo": "contadores", "pendientes": 0})
+            return
+
+        # Filtrar ya procesados (solo DBF)
+        if fuente == "dbf":
+            def _no_procesado(par):
+                envio, _ = par
+                tipo      = _safe_str(envio.get("TIPO_FACTU"), "B")
+                serie     = _safe_str(envio.get("SERIE_FACT"), "001").zfill(3)
+                serie_fmt = f"{tipo}{serie}"
+                try:
+                    numero = int(_safe_str(envio.get("NUMERO_FAC"), "0"))
+                except ValueError:
+                    return True
+                return not ya_procesado(salida, serie_fmt, numero)
+            resultado = [p for p in resultado if _no_procesado(p)]
+
+        if not resultado:
+            if verbose:
+                self._log("Sin comprobantes pendientes.", "info")
+            self._emit({"tipo": "contadores", "pendientes": 0})
+            return
+
+        # Construir detalles_idx
+        detalles_idx = {}
+        envios = []
+        for envio, items in resultado:
+            tipo   = _safe_str(envio.get("TIPO_FACTU"), "B")
+            serie  = _safe_str(envio.get("SERIE_FACT"), "001").zfill(3)
+            numero = _safe_str(envio.get("NUMERO_FAC"), "0")
+            detalles_idx[(tipo, serie, numero)] = items
+            envios.append(envio)
+
+        facturas = [e for e in envios if _es_factura(_safe_str(e.get("SERIE_FACT", "")))]
+        boletas  = [e for e in envios if not _es_factura(_safe_str(e.get("SERIE_FACT", "")))]
+        total    = len(facturas) + len(boletas)
+
+        self._log(
+            f"Pendientes: {total}  [{len(facturas)} facturas / {len(boletas)} boletas]"
+            f"  — lote de hasta {LOTE_MAXIMO}", "info")
+
+        # Facturas: siempre inmediato
+        for envio in facturas[:LOTE_MAXIMO]:
+            if self.stop.is_set():
+                return
+            self._procesar_comprobante(envio, detalles_idx)
+
+        # Boletas: timer o forzado
+        ahora = time.time()
+        if boletas:
+            if forzar_boletas or (ahora - self._ultimo_boleta) >= INTERVALO_BOLETA:
+                lote  = boletas[:LOTE_MAXIMO]
+                resto = len(boletas) - len(lote)
+                self._log(
+                    f"Enviando {len(lote)} boleta(s)"
+                    + (f" — quedan {resto} para el siguiente ciclo" if resto else ""), "info")
+                for envio in lote:
+                    if self.stop.is_set():
+                        return
+                    self._procesar_comprobante(envio, detalles_idx)
+                self._ultimo_boleta = ahora
+            else:
+                resta = int(INTERVALO_BOLETA - (ahora - self._ultimo_boleta))
+                self._log(f"{len(boletas)} boleta(s) — proximo ciclo en {resta}s", "info")
+
+        self._emit({"tipo": "contadores", "pendientes": total})
+
+        # Reporte diario
+        hoy = date.today()
+        if hoy != self._ultimo_reporte:
+            try:
+                rpt = generar_reporte(Path(salida))
+                self._log(f"Reporte diario: {rpt.name}", "info")
+            except Exception:
+                pass
+            self._ultimo_reporte = hoy
+
+    def ciclo_manual(self):
+        """Boton 'Enviar ahora' — fuerza boletas tambien."""
+        self._ciclo(forzar_boletas=True, verbose=True)
+
+    def iniciar(self):
+        self._log("Monitor iniciado — ciclo automatico activo", "info")
+        while not self.stop.is_set():
+            try:
+                self._ciclo(forzar_boletas=False)
+            except Exception as e:
+                self._log(f"Error inesperado en ciclo: {type(e).__name__}: {e}", "error")
+            self.stop.wait(INTERVALO_CHECK)
+
+    def detener(self):
+        self.stop.set()
