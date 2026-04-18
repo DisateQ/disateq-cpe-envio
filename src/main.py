@@ -98,9 +98,6 @@ def main():
         mostrar_fingerprint(fp)
         return
 
-    if not _verificar_instancia_unica():
-        return
-
     # Verificar licencia
     try:
         verificar_licencia()
@@ -110,13 +107,13 @@ def main():
 
     cfg = leer_config()
 
-    salida   = cfg.get("RUTAS", "salida_txt", fallback=r"D:\DisateQ\Bridge")
-    log_file = str(Path(salida) / "bridge.log")
+    salida   = cfg.get("RUTAS", "salida_txt", fallback=r"D:\FFEESUNAT\CPE DisateQ")
+    log_file = str(Path(salida) / "cpe_disateq.log")
     Path(salida).mkdir(parents=True, exist_ok=True)
     init_logging(log_file)
 
     log = logging.getLogger(__name__)
-    log.info(f"DisateQ Bridge\u2122 v{VERSION} iniciado \u2014 @fhertejada\u2122 \u00b7 DisateQ\u2122")
+    log.info(f"CPE DisateQ\u2122 v{VERSION} iniciado \u2014 @fhertejada\u2122 \u00b7 DisateQ\u2122")
 
     # Sobrescribir desde argumentos si se pasaron
     if args.modalidad:
@@ -124,7 +121,8 @@ def main():
     if args.modo:
         cfg.set("ENVIO", "modo", args.modo)
 
-    # --config: abre wizard protegido por PIN
+    # --config: abre wizard sin verificar instancia unica
+    # permite abrir configuracion aunque el monitor este corriendo
     if args.config:
         import tkinter as tk
         from config_wizard import abrir_wizard
@@ -132,6 +130,10 @@ def main():
         root.withdraw()
         abrir_wizard(root, cfg)
         root.mainloop()
+        return
+
+    # Verificar instancia unica solo para modo normal y --once
+    if not _verificar_instancia_unica():
         return
 
     # Primera ejecucion: sin configuracion completa

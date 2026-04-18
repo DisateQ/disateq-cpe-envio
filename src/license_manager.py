@@ -4,7 +4,7 @@ license_manager.py
 Verificacion de licencia local firmada — CPE DisateQ™
 
 Flujo:
-  1. Al arrancar, lee D:\FFEESUNAT\CPE DisateQ\disateq.lic
+  1. Al arrancar, lee D:\\FFEESUNAT\\CPE DisateQ\\disateq.lic
   2. Verifica que la firma sea de DisateQ (llave publica embebida)
   3. Verifica que el fingerprint del .lic coincida con este hardware
   4. Si todo OK → arranca
