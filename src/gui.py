@@ -77,8 +77,19 @@ def iniciar_gui(cfg, monitor_cls, report_fn):
     tk.Label(fr_title, text="  Motor de facturación electrónica",
              font=("Segoe UI", 10), bg=C_HEADER, fg="#90b8d8").pack(side="left")
 
+    # Boton configuracion (rueda dentada) — header derecha
+    def _abrir_config():
+        from config_wizard import abrir_wizard
+        abrir_wizard(root, cfg, callback=lambda: None)
+
+    tk.Button(header, text="\u2699", font=("Segoe UI", 14),
+              bg=C_HEADER, fg="#90b8d8",
+              relief="flat", bd=0, cursor="hand2",
+              activebackground=C_HEADER, activeforeground="white",
+              command=_abrir_config).pack(side="right", padx=(0, 6), pady=6)
+
     fr_conn = tk.Frame(header, bg=C_HEADER)
-    fr_conn.pack(side="right", padx=18)
+    fr_conn.pack(side="right", padx=(0, 4))
     lbl_dot = tk.Label(fr_conn, text="●", font=("Segoe UI", 11),
                        bg=C_HEADER, fg="#d50000")
     lbl_dot.pack(side="left")
