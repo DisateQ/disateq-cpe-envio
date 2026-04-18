@@ -4,10 +4,11 @@ config_wizard.py
 Asistente de configuracion — CPE DisateQ™
 Protegido con PIN de 4 digitos.
 
-v2.2 — Rediseño con tabs:
+v2.3 — Tabs:
   Tab 1: Empresa + Seguridad
   Tab 2: Series y correlativos
   Tab 3: Conexion APIFAS
+  Tab 4: Fuente de datos
 """
 
 import tkinter as tk
@@ -310,6 +311,46 @@ def abrir_wizard(parent, cfg, callback=None, primer_arranque=False):
         entry_url_anulacion.config(state="normal", fg="#000000")
         btn_restaurar.config(state="normal")
 
+    # ── TAB 4: Fuente de datos ────────────────────────────────
+    tab4 = tk.Frame(nb, bg=C_WHITE)
+    tab4.columnconfigure(1, weight=1)
+    nb.add(tab4, text="  Fuente  ")
+
+    _seccion_lbl(tab4, "Origen de datos", row=0)
+
+    tk.Label(tab4, text="Tipo de fuente", font=("Segoe UI", 10),
+             bg=C_WHITE, fg=C_GRIS, anchor="w").grid(
+             row=1, column=0, sticky="w", pady=6, padx=(12, 10))
+
+    v_fuente = tk.StringVar(value=cfg.get("FUENTE", "tipo", fallback="dbf").lower())
+    fr_fuente = tk.Frame(tab4, bg=C_WHITE)
+    fr_fuente.grid(row=1, column=1, sticky="w", pady=6)
+
+    for val, lbl in [("dbf", "DBF / FoxPro"), ("xlsx", "Excel (_CPE)"), ("sql", "SQL (proximamente)")]:
+        estado = "normal" if val != "sql" else "disabled"
+        tk.Radiobutton(fr_fuente, text=lbl, variable=v_fuente, value=val,
+                       font=("Segoe UI", 10), bg=C_WHITE,
+                       state=estado).pack(side="left", padx=(0, 16))
+
+    _nota(tab4, "DBF: sistema FoxPro legacy.  Excel: DisateQ POS exporta hoja _CPE.", row=2)
+
+    _seccion_lbl(tab4, "Configuracion DBF", row=3)
+    v_ruta_dbf = _campo(tab4, "Carpeta DBF",
+                        cfg.get("RUTAS", "data_dbf", fallback=r"C:\Sistemas\data"),
+                        row=4)
+    _nota(tab4, r"Ejemplo: C:\Sistemas\data", row=5)
+
+    _seccion_lbl(tab4, "Configuracion Excel", row=6)
+    v_ruta_xlsx = _campo(tab4, "Archivo _CPE (.xlsx)",
+                         cfg.get("FUENTE", "ruta_xlsx", fallback=""),
+                         row=7)
+    _nota(tab4, r"Ejemplo: C:\POS\exportaciones\cpe.xlsx", row=8)
+
+    tk.Label(tab4,
+             text="SQL Server / PostgreSQL / Oracle — disponible en version futura",
+             font=("Segoe UI", 8, "italic"), bg=C_WHITE, fg=C_DISABLE).grid(
+             row=9, column=0, columnspan=2, sticky="w", padx=16, pady=(12, 0))
+
     # ── Guardar ───────────────────────────────────────────────
     def guardar():
         ruc = v_ruc.get().strip()
@@ -349,11 +390,14 @@ def abrir_wizard(parent, cfg, callback=None, primer_arranque=False):
         cfg.set("EMPRESA", "serie_factura",    ws_f.get_series()[0] if ws_f.get_series() else "F001")
         cfg.set("EMPRESA", "serie_nota",       ws_n.get_series()[0] if ws_n.get_series() else "NC01")
 
-        cfg.set("ENVIO", "modalidad",     modalidad)
-        cfg.set("ENVIO", "modo",          "legacy")
-        cfg.set("ENVIO", "url_envio",     url_envio)
-        cfg.set("ENVIO", "url_anulacion", url_anulacion)
-        cfg.set("SEGURIDAD", "pin", pin)
+        cfg.set("ENVIO",     "modalidad",     modalidad)
+        cfg.set("ENVIO",     "modo",          "legacy")
+        cfg.set("ENVIO",     "url_envio",     url_envio)
+        cfg.set("ENVIO",     "url_anulacion", url_anulacion)
+        cfg.set("SEGURIDAD", "pin",           pin)
+        cfg.set("FUENTE",    "tipo",          v_fuente.get())
+        cfg.set("RUTAS",     "data_dbf",      v_ruta_dbf.get().strip())
+        cfg.set("FUENTE",    "ruta_xlsx",     v_ruta_xlsx.get().strip())
 
         salida_w = cfg.get("RUTAS", "salida_txt", fallback=BASE_DIR)
         for tipo, ws in [("boleta", ws_b), ("factura", ws_f), ("nota", ws_n)]:
