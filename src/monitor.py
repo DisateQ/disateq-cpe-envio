@@ -206,4 +206,4 @@ class Monitor:
     def _ciclo(self, forzar_boletas: bool = False, verbose: bool = False):
         salida    = self.cfg.get("RUTAS", "salida_txt")
         url_envio = self.cfg.get("ENVIO", "url_envio")
-        fuente    =
+        Get-Content src\config_wizard.py | Select-String "Guardar" | Select-Object LineNumber, Linefuente    = self.cfg.get("FUENTE", "tipo", fallback="dbf").lower()
