@@ -14,13 +14,17 @@ Excepciones que puede lanzar:
 from pathlib import Path
 from exceptions import GeneracionError
 
+def _tipo_doc_apifas(tipo_doc: str) -> int:
+    """Mapea tipo_doc SUNAT a código APIFAS."""
+    tipo_map = {'01': 1, '03': 2, '07': 3, '08': 3}
+    return tipo_map.get(tipo_doc, 2)
 
 def _cabecera(c: dict, t: dict, cl: dict) -> list:
     """Genera las lineas de cabecera del TXT."""
     return [
         "operacion|generar_comprobante|",
         # APIFAS: 1=factura, 2=boleta, 3=nota crédito o débito
-        f"tipo_de_comprobante|{{{'01':1,'03':2,'07':3,'08':3}.get(c.get('tipo_doc','03'),2)}}|",
+        f"tipo_de_comprobante|{_tipo_doc_apifas(c.get('tipo_doc','03'))}|",
         f"serie|{c['serie']}|",
         f"numero|{c['numero']}|",
         "sunat_transaction|1|",
