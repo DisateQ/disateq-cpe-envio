@@ -15,6 +15,7 @@ cd /d %~dp0
 :: ── Buscar Python ─────────────────────────────────────────
 set PYTHON=
 for %%p in (
+    "%LOCALAPPDATA%\Programs\Python\Python314\python.exe"
     "%LOCALAPPDATA%\Programs\Python\Python313\python.exe"
     "%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
     "%LOCALAPPDATA%\Programs\Python\Python311\python.exe"
