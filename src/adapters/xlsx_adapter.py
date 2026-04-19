@@ -1,91 +1,66 @@
 """
 adapters/xlsx_adapter.py
 ========================
-Adaptador para leer comprobantes exportados por DisateQ POS™
-en formato _CPE (xlsx).
+Adaptador Excel para DisateQ CPE™.
+Lee la hoja _CPE exportada por DisateQ POS™.
 
-Decisiones de diseño (Abril 2026 — memo cerrado):
-  - Misma firma leer() que dbf_adapter.py  →  interfaz uniforme
-  - Columnas leidas por NOMBRE (fila 1), nunca por indice
-  - El adaptador confia en los valores calculados por POS; no re-deriva
+Contrato de datos v1.1 — Abril 2026 (cerrado).
+Campos segun catalogo definitivo _CPE v1.1.
 
-Firma:
-    leer(ruta: str) -> tuple[dict, list[dict]]
-
-Retorna:
-    (cabecera, items) donde:
-      cabecera — dict con datos del comprobante
-      items    — list[dict] con cada línea del detalle
-
-Excepciones:
-    AdapterError   — archivo no encontrado, hoja _CPE ausente,
-                     columnas requeridas faltantes, datos invalidos
+Firma uniforme:
+    XlsxAdapter().leer(ruta) -> list[(cabecera, items)]
 """
 
 from __future__ import annotations
 
 import logging
 from pathlib import Path
+from adapters.base_adapter import BaseAdapter, AdapterError
 
 try:
     import openpyxl
 except ImportError as e:
-    raise ImportError(
-        "openpyxl no instalado. Ejecutar: pip install openpyxl"
-    ) from e
+    raise ImportError("openpyxl no instalado. Ejecutar: pip install openpyxl") from e
 
 log = logging.getLogger(__name__)
 
-# ── Nombre de la hoja oculta exportada por POS ───────────────
 _HOJA = "_CPE"
 
-# ── Columnas requeridas en la hoja _CPE ──────────────────────
-# Cabecera (fila 1, columna A en adelante — valores en fila 2)
+# Columnas requeridas — contrato v1.1
 _COLS_CABECERA = {
-    "tipo_doc",           # "01" factura / "03" boleta
-    "serie",              # "F001", "B001", etc.
-    "numero",             # correlativo entero
-    "fecha_emision",      # "DD-MM-YYYY" o date/datetime
-    "moneda",             # "PEN" / "USD"
-    "forma_pago",         # "Contado" / "Credito"
-    "cliente_tipo_doc",
-    "cliente_numero_doc",
-    "cliente_denominacion",
-    "cliente_direccion",
-    "total_gravada",
-    "total_exonerada",
-    "total_inafecta",
-    "total_igv",
-    "total_icbper",
-    "total",
+    "cpe_tipo",
+    "cpe_serie",
+    "cpe_numero",
+    "cpe_fecha",
+    "cli_tipo_doc",
+    "cli_num_doc",
+    "cli_nombre",
+    "cli_direccion",
+    "venta_subtotal",
+    "venta_igv",
+    "venta_total",
+    "pago_forma",
+    "estado",
 }
 
-# Columnas requeridas por cada fila de item
 _COLS_ITEM = {
-    "item_codigo",
+    "item_orden",
     "item_descripcion",
+    "item_unidad",
     "item_unspsc",
-    "item_unidad",        # "NIU" / "ZZ"
     "item_cantidad",
-    "item_precio_con_igv",
-    "item_precio_sin_igv",
+    "item_precio_unit",
+    "item_valor_unitario",
     "item_subtotal_sin_igv",
     "item_igv",
     "item_total",
-    "item_afectacion_igv",  # "10" / "20" / "30"
+    "item_afectacion_igv",
 }
 
 
-# ── Excepcion propia del adaptador ───────────────────────────
+# ── Helpers ───────────────────────────────────────────────────
 
-class AdapterError(Exception):
-    """Error controlado del xlsx_adapter."""
-    pass
-
-
-# ── Helpers internos ─────────────────────────────────────────
-
-def _str(valor, default: str = "") -> str:
+def _str(valor, default="") -> str:
     if valor is None:
         return default
     return str(valor).strip() or default
@@ -95,47 +70,32 @@ def _float(valor, campo: str) -> float:
     try:
         return float(valor)
     except (TypeError, ValueError):
-        raise AdapterError(
-            f"Valor no numerico en columna '{campo}': {valor!r}"
-        )
+        raise AdapterError(f"Valor no numerico en columna '{campo}': {valor!r}")
 
 
 def _int(valor, campo: str) -> int:
     try:
         return int(float(valor))
     except (TypeError, ValueError):
-        raise AdapterError(
-            f"Valor entero invalido en columna '{campo}': {valor!r}"
-        )
+        raise AdapterError(f"Valor entero invalido en columna '{campo}': {valor!r}")
 
 
 def _fecha(valor, campo: str) -> str:
-    """
-    Normaliza a string 'DD-MM-YYYY'.
-    Acepta date/datetime de openpyxl o string 'DD-MM-YYYY' / 'YYYY-MM-DD'.
-    """
+    """Normaliza fecha a DD-MM-YYYY."""
     from datetime import date, datetime
-
     if isinstance(valor, (date, datetime)):
         return valor.strftime("%d-%m-%Y")
-
     s = _str(valor)
     if not s:
         raise AdapterError(f"Fecha vacia en columna '{campo}'")
-
-    # DD-MM-YYYY
-    if len(s) == 10 and s[2] == "-" and s[5] == "-":
-        return s
-
-    # YYYY-MM-DD
-    if len(s) == 10 and s[4] == "-" and s[7] == "-":
+    # YYYY-MM-DD → DD-MM-YYYY
+    if len(s) == 10 and s[4] == "-":
         a, m, d = s.split("-")
         return f"{d}-{m}-{a}"
-
-    raise AdapterError(
-        f"Formato de fecha no reconocido en '{campo}': {s!r} "
-        f"— esperado DD-MM-YYYY o date"
-    )
+    # DD-MM-YYYY
+    if len(s) == 10 and s[2] == "-":
+        return s
+    raise AdapterError(f"Formato de fecha no reconocido en '{campo}': {s!r}")
 
 
 def _validar_columnas(encabezados: set, requeridas: set, contexto: str):
@@ -147,116 +107,209 @@ def _validar_columnas(encabezados: set, requeridas: set, contexto: str):
         )
 
 
-# ── Función principal ─────────────────────────────────────────
+def _mapear_forma_pago(forma: str) -> str:
+    """Mapea formas de pago POS → formato interno CPE."""
+    mapa = {
+        "EFECTIVO":      "Contado",
+        "YAPE":          "Contado",
+        "TRANSFERENCIA": "Contado",
+        "TARJETA":       "Contado",
+        "CREDITO":       "Credito",
+    }
+    return mapa.get(forma.upper().strip(), "Contado")
+
+
+def _mapear_tipo_doc(cpe_tipo: str) -> str:
+    """01=Factura, 03=Boleta."""
+    return cpe_tipo.strip() if cpe_tipo.strip() in ("01", "03") else "03"
+
+
+# ── Clase adaptadora ─────────────────────────────────────────
+
+class XlsxAdapter(BaseAdapter):
+    """
+    Adaptador para leer comprobantes desde hoja _CPE de DisateQ POS™.
+    Contrato de datos v1.1.
+    """
+
+    @property
+    def nombre(self) -> str:
+        return "XlsxAdapter (_CPE v1.1)"
+
+    def leer(self, ruta: str) -> list:
+        """
+        Lee el archivo xlsx y retorna lista de (cabecera, items).
+        Cada elemento es un comprobante listo para normalizar_desde_cpe().
+
+        Args:
+            ruta: path al archivo .xlsx (puede incluir rutas secundarias con |)
+
+        Returns:
+            list de (cabecera: dict, items: list[dict])
+
+        Raises:
+            AdapterError si el archivo, la hoja o los datos son invalidos
+        """
+        # Si vienen múltiples rutas separadas por |, usar la primera que tenga xlsx
+        rutas = [r.strip() for r in ruta.split("|") if r.strip()]
+        ruta_xlsx = None
+
+        for r in rutas:
+            p = Path(r)
+            if p.suffix.lower() in (".xlsx", ".xlsm"):
+                if p.exists():
+                    ruta_xlsx = p
+                    break
+            # Si es carpeta, buscar _CPE.xlsx dentro
+            if p.is_dir():
+                candidatos = list(p.glob("_CPE*.xlsx")) + list(p.glob("_CPE*.xlsm"))
+                if candidatos:
+                    ruta_xlsx = candidatos[0]
+                    break
+
+        if not ruta_xlsx:
+            raise AdapterError(
+                f"Archivo _CPE.xlsx no encontrado en las rutas configuradas: {rutas}"
+            )
+
+        try:
+            wb = openpyxl.load_workbook(str(ruta_xlsx), data_only=True)
+        except Exception as e:
+            raise AdapterError(f"No se pudo abrir el archivo xlsx: {e}") from e
+
+        if _HOJA not in wb.sheetnames:
+            raise AdapterError(
+                f"Hoja '{_HOJA}' no encontrada en {ruta_xlsx.name}. "
+                f"Hojas disponibles: {wb.sheetnames}"
+            )
+
+        ws = wb[_HOJA]
+        filas = list(ws.iter_rows(values_only=True))
+
+        if len(filas) < 2:
+            raise AdapterError(
+                f"Hoja _CPE sin datos — se esperan al menos fila 1=headers, fila 2+=datos"
+            )
+
+        # Fila 1: encabezados
+        nombres = [_str(c).lower() for c in filas[0]]
+        encabezados_set = set(nombres)
+
+        _validar_columnas(encabezados_set, _COLS_CABECERA, "Cabecera")
+        _validar_columnas(encabezados_set, _COLS_ITEM,     "Items")
+
+        idx = {nombre: i for i, nombre in enumerate(nombres)}
+
+        def col(fila, nombre):
+            i = idx.get(nombre)
+            return fila[i] if i is not None and i < len(fila) else None
+
+        # Agrupar filas por comprobante (cpe_serie + cpe_numero)
+        comprobantes: dict[tuple, dict] = {}
+
+        for fila_n, fila in enumerate(filas[1:], start=2):
+            if all(v is None for v in fila):
+                continue
+
+            # Solo procesar filas con estado BORRADOR o SIN CONEXION
+            estado = _str(col(fila, "estado")).upper()
+            if estado not in ("BORRADOR", "SIN CONEXION", ""):
+                continue
+
+            serie  = _str(col(fila, "cpe_serie"))
+            numero = _str(col(fila, "cpe_numero"))
+            clave  = (serie, numero)
+
+            if clave not in comprobantes:
+                # Primera fila de este comprobante — leer cabecera
+                try:
+                    cabecera = {
+                        "tipo_doc":            _mapear_tipo_doc(_str(col(fila, "cpe_tipo"))),
+                        "serie":               serie,
+                        "numero":              _int(col(fila, "cpe_numero"), "cpe_numero"),
+                        "fecha_emision":       _fecha(col(fila, "cpe_fecha"), "cpe_fecha"),
+                        "moneda":              "PEN",
+                        "forma_pago":          _mapear_forma_pago(_str(col(fila, "pago_forma"), "EFECTIVO")),
+                        "cliente_tipo_doc":    _str(col(fila, "cli_tipo_doc"), "-"),
+                        "cliente_numero_doc":  _str(col(fila, "cli_num_doc"), "00000000"),
+                        "cliente_denominacion":_str(col(fila, "cli_nombre"), "CLIENTES VARIOS"),
+                        "cliente_direccion":   _str(col(fila, "cli_direccion"), "-"),
+                        "total_gravada":       0.0,
+                        "total_exonerada":     0.0,
+                        "total_inafecta":      0.0,
+                        "total_igv":           _float(col(fila, "venta_igv"),    "venta_igv"),
+                        "total_icbper":        0.0,
+                        "total":               _float(col(fila, "venta_total"),  "venta_total"),
+                    }
+                except AdapterError:
+                    raise
+                except Exception as e:
+                    raise AdapterError(f"Error leyendo cabecera en fila {fila_n}: {e}") from e
+
+                comprobantes[clave] = {"cabecera": cabecera, "items": []}
+
+            # Leer item de esta fila
+            afectacion = _str(col(fila, "item_afectacion_igv"), "10")
+            try:
+                item = {
+                    "codigo":           _str(col(fila, "item_codigo"), "000"),
+                    "descripcion":      _str(col(fila, "item_descripcion"), "SIN DESCRIPCION").upper(),
+                    "unspsc":           _str(col(fila, "item_unspsc"), "10000000"),
+                    "unidad":           _str(col(fila, "item_unidad"), "NIU"),
+                    "cantidad":         _float(col(fila, "item_cantidad"),        f"item_cantidad fila {fila_n}"),
+                    "precio_con_igv":   _float(col(fila, "item_precio_unit"),     f"item_precio_unit fila {fila_n}"),
+                    "precio_sin_igv":   _float(col(fila, "item_valor_unitario"),  f"item_valor_unitario fila {fila_n}"),
+                    "subtotal_sin_igv": _float(col(fila, "item_subtotal_sin_igv"),f"item_subtotal_sin_igv fila {fila_n}"),
+                    "igv":              _float(col(fila, "item_igv"),              f"item_igv fila {fila_n}"),
+                    "total":            _float(col(fila, "item_total"),            f"item_total fila {fila_n}"),
+                    "afectacion_igv":   afectacion,
+                }
+            except AdapterError:
+                raise
+            except Exception as e:
+                raise AdapterError(f"Error leyendo item en fila {fila_n}: {e}") from e
+
+            comprobantes[clave]["items"].append(item)
+
+        if not comprobantes:
+            raise AdapterError(
+                "No se encontraron comprobantes en estado BORRADOR o SIN CONEXION en _CPE."
+            )
+
+        # Calcular totales por afectacion
+        resultado = []
+        for clave, datos in comprobantes.items():
+            cab   = datos["cabecera"]
+            items = datos["items"]
+
+            gravada   = sum(i["subtotal_sin_igv"] for i in items if i["afectacion_igv"] == "10")
+            exonerada = sum(i["total"]            for i in items if i["afectacion_igv"] == "20")
+            inafecta  = sum(i["total"]            for i in items if i["afectacion_igv"] == "30")
+
+            cab["total_gravada"]   = round(gravada,   8)
+            cab["total_exonerada"] = round(exonerada, 8)
+            cab["total_inafecta"]  = round(inafecta,  8)
+
+            log.info(
+                f"XlsxAdapter: {cab['serie']}-{str(cab['numero']).zfill(8)} "
+                f"| {len(items)} item(s) | total S/ {cab['total']}"
+            )
+            resultado.append((cab, items))
+
+        return resultado
+
+
+# ── Función legacy (compatibilidad hacia atrás) ───────────────
 
 def leer(ruta: str) -> tuple[dict, list[dict]]:
     """
-    Lee el archivo xlsx exportado por DisateQ POS™ y retorna
-    (cabecera, items) listos para pasar a normalizar_desde_cpe().
-
-    Args:
-        ruta: Path al archivo .xlsx
-
-    Returns:
-        cabecera — dict con campos del comprobante
-        items    — list[dict] con cada línea de detalle
-
-    Raises:
-        AdapterError si el archivo, la hoja o los datos son inválidos
+    Función legacy — mantiene compatibilidad con código anterior.
+    Retorna solo el primer comprobante encontrado.
+    Para uso completo usar XlsxAdapter().leer(ruta).
     """
-    ruta_p = Path(ruta)
-    if not ruta_p.exists():
-        raise AdapterError(f"Archivo no encontrado: {ruta}")
-
-    try:
-        wb = openpyxl.load_workbook(ruta_p, data_only=True)
-    except Exception as e:
-        raise AdapterError(f"No se pudo abrir el archivo xlsx: {e}") from e
-
-    if _HOJA not in wb.sheetnames:
-        raise AdapterError(
-            f"Hoja '{_HOJA}' no encontrada en {ruta_p.name}. "
-            f"Hojas disponibles: {wb.sheetnames}"
-        )
-
-    ws = wb[_HOJA]
-    filas = list(ws.iter_rows(values_only=True))
-
-    if len(filas) < 3:
-        raise AdapterError(
-            f"Hoja _CPE con menos de 3 filas — "
-            f"se esperan: fila 1=cabecera, fila 2=valores, fila 3+=items"
-        )
-
-    # Fila 1: nombres de columnas
-    nombres = [_str(c).lower() for c in filas[0]]
-
-    # Validar columnas de cabecera
-    _validar_columnas(set(nombres), _COLS_CABECERA, "Cabecera")
-    _validar_columnas(set(nombres), _COLS_ITEM,     "Items")
-
-    idx = {nombre: i for i, nombre in enumerate(nombres)}
-
-    def col(fila, nombre):
-        return fila[idx[nombre]] if idx[nombre] < len(fila) else None
-
-    # ── Leer cabecera (fila 2) ───────────────────────────────
-    f_cab = filas[1]
-
-    cabecera = {
-        "tipo_doc":            _str(col(f_cab, "tipo_doc")),
-        "serie":               _str(col(f_cab, "serie")),
-        "numero":              _int(col(f_cab, "numero"), "numero"),
-        "fecha_emision":       _fecha(col(f_cab, "fecha_emision"), "fecha_emision"),
-        "moneda":              _str(col(f_cab, "moneda"), "PEN"),
-        "forma_pago":          _str(col(f_cab, "forma_pago"), "Contado"),
-        "cliente_tipo_doc":    _str(col(f_cab, "cliente_tipo_doc"), "-"),
-        "cliente_numero_doc":  _str(col(f_cab, "cliente_numero_doc"), "00000000"),
-        "cliente_denominacion":_str(col(f_cab, "cliente_denominacion"), "CLIENTE VARIOS"),
-        "cliente_direccion":   _str(col(f_cab, "cliente_direccion"), "-"),
-        "total_gravada":       _float(col(f_cab, "total_gravada"),   "total_gravada"),
-        "total_exonerada":     _float(col(f_cab, "total_exonerada"), "total_exonerada"),
-        "total_inafecta":      _float(col(f_cab, "total_inafecta"),  "total_inafecta"),
-        "total_igv":           _float(col(f_cab, "total_igv"),       "total_igv"),
-        "total_icbper":        _float(col(f_cab, "total_icbper"),    "total_icbper"),
-        "total":               _float(col(f_cab, "total"),           "total"),
-    }
-
-    # ── Leer items (filas 3..N) ──────────────────────────────
-    items = []
-    for fila_n, fila in enumerate(filas[2:], start=3):
-        # Fila completamente vacía → fin de datos
-        if all(v is None for v in fila):
-            break
-
-        try:
-            item = {
-                "codigo":           _str(col(fila, "item_codigo")),
-                "descripcion":      _str(col(fila, "item_descripcion")).upper(),
-                "unspsc":           _str(col(fila, "item_unspsc"), "10000000"),
-                "unidad":           _str(col(fila, "item_unidad"), "NIU"),
-                "cantidad":         _float(col(fila, "item_cantidad"),         f"item_cantidad (fila {fila_n})"),
-                "precio_con_igv":   _float(col(fila, "item_precio_con_igv"),   f"item_precio_con_igv (fila {fila_n})"),
-                "precio_sin_igv":   _float(col(fila, "item_precio_sin_igv"),   f"item_precio_sin_igv (fila {fila_n})"),
-                "subtotal_sin_igv": _float(col(fila, "item_subtotal_sin_igv"), f"item_subtotal_sin_igv (fila {fila_n})"),
-                "igv":              _float(col(fila, "item_igv"),               f"item_igv (fila {fila_n})"),
-                "total":            _float(col(fila, "item_total"),             f"item_total (fila {fila_n})"),
-                "afectacion_igv":   _str(col(fila, "item_afectacion_igv"), "10"),
-            }
-        except AdapterError:
-            raise
-        except Exception as e:
-            raise AdapterError(f"Error leyendo fila {fila_n}: {e}") from e
-
-        items.append(item)
-
-    if not items:
-        raise AdapterError("Hoja _CPE sin items — filas 3 en adelante vacías")
-
-    log.info(
-        f"xlsx_adapter: {ruta_p.name} → "
-        f"{cabecera['serie']}-{str(cabecera['numero']).zfill(8)} "
-        f"| {len(items)} item(s)"
-    )
-
+    adapter   = XlsxAdapter()
+    resultado = adapter.leer(ruta)
+    if not resultado:
+        raise AdapterError("No se encontraron comprobantes en _CPE.")
+    cabecera, items = resultado[0]
     return cabecera, items
