@@ -1,0 +1,172 @@
+# ============================================================
+# Ejemplo Completo — Mapeo YAML
+# Motor CPE DisateQ™ v3.0
+# ============================================================
+#
+# SISTEMA ORIGEN: Farmacia FoxPro con SQL Server
+# TÉCNICO: Usar source_explorer.py para obtener nombres exactos
+#
+# COMANDO:
+#   python tools/source_explorer.py --source VENTAS \
+#     --connection "Driver={SQL Server};Server=SRV01;Database=FARMACIA"
+#
+# ============================================================
+
+# Configuración de la fuente de datos
+source:
+  type: sqlserver
+  connection: "Driver={SQL Server};Server=SRV01;Database=FARMACIA;UID=cpe_user;PWD=secret"
+  table: VEN_CABECERA
+  encoding: utf-8
+
+# Mapeo de campos del comprobante (cabecera)
+comprobante:
+  tipo_doc:
+    field: TIPO_DOC
+    transform: "map({'1': '01', '2': '03'})"
+    
+  serie:
+    field: SERIE_DOC
+    transform: "upper().strip()"
+    
+  numero:
+    field: NUMERO_DOC
+    transform: "int()"
+    
+  fecha_emision:
+    field: FECHA_EMISION
+    transform: "to_date('%Y-%m-%d')"
+    
+  moneda:
+    field: MONEDA
+    default: "PEN"
+    transform: "map({'S': 'PEN', 'D': 'USD'})"
+    
+  forma_pago:
+    field: TIPO_PAGO
+    default: "Contado"
+    transform: "map({'1': 'Contado', '2': 'Credito'})"
+
+# Mapeo de campos del cliente
+cliente:
+  tipo_doc:
+    field: CLI_TIPO_DOC
+    default: "1"
+    transform: "map({'D': '1', 'R': '6', '-': '-'})"
+    
+  numero_doc:
+    field: CLI_DOCUMENTO
+    default: "00000000"
+    transform: "strip() or '00000000'"
+    
+  denominacion:
+    field: CLI_RAZON_SOCIAL
+    default: "CLIENTE VARIOS"
+    transform: "upper().strip()"
+    
+  direccion:
+    field: CLI_DIRECCION
+    default: "-"
+    transform: "strip() or '-'"
+
+# Mapeo de ítems (detalle)
+items:
+  source_table: VEN_DETALLE
+  
+  # Relación entre cabecera y detalle
+  relation:
+    TIPO_DOC: TIPO_DOC
+    SERIE_DOC: SERIE_DOC
+    NUMERO_DOC: NUMERO_DOC
+  
+  # Campos de cada ítem
+  fields:
+    codigo:
+      field: COD_PRODUCTO
+      transform: "strip()"
+      
+    descripcion:
+      field: DES_PRODUCTO
+      transform: "upper().strip()"
+      
+    cantidad:
+      field: CANTIDAD
+      transform: "float() if float() > 0 else get('CANTIDAD_FRACCION', 1)"
+      
+    unidad:
+      field: UNIDAD_MEDIDA
+      default: "NIU"
+      transform: "map({'UND': 'NIU', 'KG': 'KGM', 'SRV': 'ZZ'})"
+      
+    precio_unitario:
+      field: PRECIO_VENTA
+      transform: "float()"
+      
+    valor_unitario:
+      calculated: "precio_unitario / 1.18 if afectacion_igv == '10' else precio_unitario"
+      
+    subtotal_sin_igv:
+      field: IMPORTE_SUBTOTAL
+      transform: "float()"
+      
+    igv:
+      field: IMPORTE_IGV
+      transform: "float()"
+      
+    total:
+      field: IMPORTE_TOTAL
+      transform: "float()"
+      
+    afectacion_igv:
+      field: TIPO_AFECTACION
+      transform: "map({'G': '10', 'E': '20', 'I': '30'})"
+      
+    unspsc:
+      field: COD_SUNAT
+      default: "10000000"
+
+# Reglas de negocio
+business_rules:
+  # Ignorar anulados
+  ignore_if:
+    - field: FLAG_ANULADO
+      equals: 1
+      
+  # Solo pendientes de envío
+  filter:
+    - field: FLAG_ESTADO_CPE
+      equals: 'P'
+
+# Validaciones post-mapeo
+validations:
+  - check: "total > 0"
+    error: "El total debe ser mayor a cero"
+    
+  - check: "len(items) > 0"
+    error: "El comprobante debe tener al menos un ítem"
+    
+  - check: "abs((gravada + exonerada + igv) - total) < 0.10"
+    error: "Diferencia en totales mayor a S/0.10"
+    
+  - check: "serie != ''"
+    error: "Serie no puede estar vacía"
+    
+  - check: "numero > 0"
+    error: "Número debe ser mayor a cero"
+
+# ============================================================
+# Notas técnicas:
+#
+# 1. Ejecutar source_explorer.py PRIMERO para ver campos reales
+# 2. Ajustar nombres de campos según salida del explorer
+# 3. Probar mapeo con datos reales antes de producción
+# 4. Este YAML se guarda en: src/adapters/mappings/cliente_xyz.yaml
+#
+# Uso:
+#   from adapters.sql_adapter import SQLAdapter
+#   adapter = SQLAdapter('src/adapters/mappings/cliente_xyz.yaml')
+#   adapter.connect()
+#   pendientes = adapter.read_pending()
+#   ...
+#
+# ============================================================

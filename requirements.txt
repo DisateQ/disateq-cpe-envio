@@ -1,7 +1,21 @@
-requests>=2.31.0
-dbfread>=2.0.7
-pyinstaller>=6.0.0
-pytest>=8.0.0
-openpyxl>=3.1.0
-cryptography>=46.0.0
-dbf>=0.99.0
+# Motor CPE DisateQ™ v3.0 — Dependencias
+
+# Lectura de fuentes de datos
+dbfread==2.0.7          # DBF (FoxPro)
+openpyxl==3.1.2         # Excel (XLSX)
+pyodbc==5.0.1           # ODBC / SQL Server / Access
+PyYAML==6.0.1           # Mapeo YAML
+
+# HTTP para envío a SUNAT
+requests==2.31.0
+
+# Testing
+pytest==7.4.3
+
+# Opcional - Bases de datos específicas
+# psycopg2==2.9.9       # PostgreSQL
+# mysql-connector-python==8.2.0  # MySQL
+# cx-Oracle==8.3.0      # Oracle
+
+# GUI (incluido en Python estándar)
+# tkinter

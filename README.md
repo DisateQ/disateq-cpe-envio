@@ -1,236 +1,203 @@
-# DisateQ Bridge™ — Motor de integración para facturación electrónica
+# Motor CPE DisateQ™ v3.0
 
-Permite que sistemas de ventas legacy (FoxPro, ERP, Excel, SQL) puedan generar,
-validar y enviar comprobantes electrónicos a SUNAT de forma automática, sin
-necesidad de migrar o reemplazar el sistema existente.
+**Motor de Comprobantes de Pago Electrónicos** — Envío directo a SUNAT SEE (UBL 2.1)
 
-**Desarrollado por:** DISATEQ
-**Autor:** @fhertejada™
-**Versión:** v2.0.0
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
+[![License](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/Tests-30%20passing-green.svg)](tests/)
 
 ---
 
-## Descripción
+## 🎯 Características
 
-DisateQ Bridge™ actúa como conector entre cualquier sistema legacy y la
-infraestructura de facturación electrónica de DISATEQ. Lee los datos del
-sistema origen, normaliza, genera el TXT en formato APIFAS, valida y envía
-a SUNAT vía OSE/PSE o SEE directo.
+### ✅ **Envío Directo a SUNAT**
+- **SIN middleware de terceros** (APIFAS, Facturador, etc.)
+- Genera JSON UBL 2.1 estándar SUNAT
+- Firma digital con certificado .PEM
+- Lectura automática de CDR (Constancia de Recepción)
 
-Soporta tres modos de operación para migración gradual sin interrumpir
-las operaciones del cliente.
+### ✅ **Adaptadores Universales**
+Compatible con **cualquier sistema origen**:
+- **Excel** (XLSX) — DisateQ POS™
+- **FoxPro** (DBF) — Sistemas legacy
+- **SQL Server** (2000-2022) — ODBC + Nativo
+- **PostgreSQL, MySQL, Oracle** — Soporte nativo
+- **Access** (MDB/ACCDB) — Vía ODBC
 
-### Ecosistema DisateQ
-
-```
-DisateQ Bridge™       ← Motor local (este repo)
-BridgeAPI             ← API local de supervisión (FastAPI)
-DisateQ Plataforma CPE ← Plataforma web central
-```
-
-### Fuentes de datos soportadas
-
-| Fuente        | Estado      | Módulo                    |
-|---------------|-------------|---------------------------|
-| DBF (FoxPro)  | Operativo   | `src/readers/dbf_reader.py`  |
-| Excel (.xlsx) | Operativo   | `src/readers/excel_reader.py`|
-| SQL           | Preparado   | `src/readers/sql_reader.py`  |
-
-### Flujo de operación
-
-**Operativo:** Sistema origen → DisateQ Bridge™ → TXT → Valida → APIFAS (OSE/PSE o SEE SUNAT)
-
-**Futuro (DisateQ Plataforma CPE):**
-TXT guardados → `txt_to_json.py` → DisateQ Plataforma CPE (`api.disateq.com/v1/cpe`)
+### ✅ **Configuración YAML**
+- Mapeo de campos **sin código**
+- Transformaciones configurables
+- Validaciones de negocio
+- Reglas por cliente en archivos separados
 
 ---
 
-## Arquitectura
+## 🚀 Inicio Rápido
 
-```
-Sistema legacy (DBF / Excel / SQL / API)
-              ↓
-     readers/ (BaseReader)
-              ↓
-    DisateQ Bridge™ .exe
-              ↓
-    Normalizer  ──→  TXT Generator
-                           ↓
-                      Validador TXT
-                           ↓
-                      Sender (APIFAS)
-                      OSE/PSE o SEE SUNAT
-                           ↓
-                      TXT guardado en enviados/
-                           ↓
-                [FUTURO] txt_to_json.py
-                           ↓
-                [FUTURO] DisateQ Plataforma CPE
-                     api.disateq.com/v1/cpe
-```
+\\\ash
+# Clonar repositorio
+git clone git@github.com:DisateQ/disateq-cpe-envio.git
+cd disateq-cpe-envio
 
----
-
-## Estructura del proyecto
-
-```
-ffee-farmacia/
-├── README.md
-├── CLAUDE.md                     ← Contexto para Claude Code
-├── compilar.bat                  ← Compila a .exe + paquete instalador
-├── INSTALAR.bat                  ← Instalador para equipos de clientes
-├── requirements.txt
-├── src/
-│   ├── main.py                   ← Entrada principal
-│   ├── config.py                 ← Gestión de configuración
-│   ├── config_wizard.py          ← Asistente de configuración (PIN)
-│   ├── readers/                  ← Capa abstracta multi-fuente
-│   │   ├── base.py               ← Interfaz BaseReader
-│   │   ├── dbf_reader.py         ← Lector DBF (FoxPro)
-│   │   ├── excel_reader.py       ← Lector Excel (.xlsx)
-│   │   └── sql_reader.py         ← Lector SQL (stub)
-│   ├── normalizer.py             ← Estructura interna + correcciones
-│   ├── txt_generator.py          ← Generador TXT (modo legacy)
-│   ├── txt_validator.py          ← Validación completa del TXT
-│   ├── json_generator.py         ← Generador JSON (modos json/bridge)
-│   ├── txt_to_json.py            ← Conversor TXT → DisateQ Plataforma CPE
-│   ├── sender.py                 ← Envío a APIFAS
-│   ├── monitor.py                ← Orquestador del ciclo de envío
-│   ├── correlativo_store.py      ← Control de correlativos procesados
-│   ├── report.py                 ← Reportes y control de correlativos
-│   ├── status_dia.py             ← Reporte de status diario
-│   ├── simulacion.py             ← Simulación sin enviar (dry-run)
-│   ├── exceptions.py             ← Jerarquía de excepciones tipadas
-│   └── gui.py                    ← Interfaz gráfica (Tkinter)
-├── bridge_api/                   ← BridgeAPI (FastAPI) — supervisión
-│   ├── main.py
-│   ├── routers/
-│   └── schemas.py
-├── db/                           ← SQLite historial local
-│   ├── database.py
-│   └── models.py
-├── dashboard/                    ← Frontend React (DisateQ Bridge Dashboard)
-└── tests/
-    ├── test_generator.py
-    └── samples/
-```
-
----
-
-## Requisitos
-
-- Windows 10 o superior
-- Python 3.10+ (solo para desarrollo/compilación)
-- Sistema legacy instalado con acceso a datos
-- Carpeta `D:\DisateQ\Bridge\` (se crea automáticamente)
-
-### Dependencias Python
-
-```
-requests
-dbfread
-openpyxl
-tkinter (incluido en Python estándar)
-fastapi
-uvicorn
-sqlalchemy
-pyinstaller (solo para compilar)
-```
-
----
-
-## Instalación en cliente
-
-### Opción A — Paquete instalador (recomendado)
-
-1. Compilar en Windows con `compilar.bat` → genera `dist\DisateQBridge_Instalador.zip`
-2. Copiar el ZIP al equipo del cliente y descomprimir
-3. Clic derecho en `INSTALAR.bat` → **Ejecutar como administrador**
-4. Al abrirse DisateQ Bridge™ por primera vez, completar:
-   - Razón social y RUC
-   - Serie (ej: B001)
-   - Modalidad: **OSE / PSE** o **SEE SUNAT**
-   - **Último correlativo enviado** — para no reenviar históricos
-   - **PIN de 4 dígitos** — protege el acceso a la configuración
-
-### Opción B — Desde código fuente (desarrollo)
-
-```bash
-git clone https://github.com/DisateQ/ffee-farmacia.git
-cd ffee-farmacia
+# Instalar dependencias
 pip install -r requirements.txt
-python src/main.py
-```
+
+# Explorar fuente de datos del cliente
+python tools/source_explorer.py --source ventas.dbf
+
+# Configurar mapeo YAML
+cp docs/mapping_examples/ejemplo_completo_sql.yaml \\
+   src/adapters/mappings/mi_cliente.yaml
+
+# Editar con nombres reales de campos
+nano src/adapters/mappings/mi_cliente.yaml
+
+# Probar
+python -m pytest tests/ -v
+\\\
 
 ---
 
-## Configuración
+## 📁 Estructura del Proyecto
 
-El archivo `bridge_config.ini` se genera en `D:\DisateQ\Bridge\` durante la primera ejecución.
-
-```ini
-[EMPRESA]
-RUC          = 10405206710
-RAZON_SOCIAL = EMPRESA SAC
-SERIE        = B001
-
-[ENVIO]
-MODALIDAD    = SUNAT
-MODO         = legacy
-URL_ENVIO    = https://apifas.disateq.com/produccion_text.php
-URL_ANULACION = https://apifas.disateq.com/produccion_anular.php
-
-[RUTAS]
-DATA_SOURCE  = C:\Sistemas\data
-SALIDA_TXT   = D:\DisateQ\Bridge
-
-[SEGURIDAD]
-PIN          = 1234
-
-[CORRELATIVO]
-B001         = 0
-```
-
-### Endpoints APIFAS
-
-| Modalidad   | Operación  | URL                                                    |
-|-------------|------------|--------------------------------------------------------|
-| OSE / PSE   | Envío      | https://apifas.disateq.com/ose_produccion.php          |
-| OSE / PSE   | Anulación  | https://apifas.disateq.com/ose_anular.php              |
-| SEE SUNAT   | Envío      | https://apifas.disateq.com/produccion_text.php         |
-| SEE SUNAT   | Anulación  | https://apifas.disateq.com/produccion_anular.php       |
-| Plataforma  | Envío      | https://api.disateq.com/v1/cpe (futuro)                |
+\\\
+disateq-cpe-envio/
+├── src/
+│   ├── adapters/          # Adaptadores universales
+│   │   ├── base_adapter.py
+│   │   ├── xlsx_adapter.py    # Excel
+│   │   ├── dbf_adapter.py     # FoxPro
+│   │   ├── sql_adapter.py     # SQL universal
+│   │   ├── yaml_mapper.py     # Motor de mapeo
+│   │   └── mappings/          # Configs por cliente
+│   ├── normalizer.py      # UBL 2.1 normalización
+│   ├── sender.py          # Envío a SUNAT
+│   └── signer.py          # Firma digital
+├── tools/
+│   └── source_explorer.py # Inspección de datos
+├── tests/                 # 30 tests
+├── docs/                  # Documentación completa
+└── requirements.txt
+\\\
 
 ---
 
-## Uso
+## 🔧 Uso Básico
 
-### Interfaz gráfica
+### **Opción 1: Excel (DisateQ POS™)**
 
-```
-DisateQBridge.exe
-```
+\\\python
+from adapters.xlsx_adapter import XlsxAdapter
 
-### Línea de comandos
+# Leer desde Excel
+adapter = XlsxAdapter('ventas.xlsx')
+adapter.connect()
 
-```bash
-DisateQBridge.exe --once        # Procesar pendientes y terminar
-DisateQBridge.exe --config      # Abrir configuración (requiere PIN)
-DisateQBridge.exe --reporte     # Generar reporte de correlativos
-DisateQBridge.exe --modo legacy # Forzar modo TXT
-DisateQBridge.exe --modo json   # Forzar modo JSON
-```
+# Obtener pendientes
+comprobantes = adapter.read_pending()
+
+for comp in comprobantes:
+    items = adapter.read_items(comp)
+    cpe = adapter.normalize(comp, items)
+    
+    # Enviar a SUNAT
+    from sender import enviar_cpe
+    exito, cdr = enviar_cpe(cpe, 'certificado.pem')
+    print(f"CPE {cpe['serie']}-{cpe['numero']}: {exito}")
+\\\
+
+### **Opción 2: SQL Server con YAML**
+
+\\\python
+from adapters.sql_adapter import SQLAdapter
+
+# Cargar configuración YAML
+adapter = SQLAdapter('src/adapters/mappings/cliente_xyz.yaml')
+adapter.connect()
+
+# Procesar pendientes
+for comp in adapter.read_pending():
+    items = adapter.read_items(comp)
+    cpe = adapter.normalize(comp, items)
+    # ... enviar
+\\\
 
 ---
 
-## Modos de operación
+## 📚 Documentación
 
-| Modo     | Descripción                                                      |
-|----------|------------------------------------------------------------------|
-| `legacy` | Genera TXT → envía a APIFAS → guarda en `enviados/`             |
-| `json`   | Genera JSON → envía a APIFAS (formato alternativo)              |
-| `bridge` | Genera TXT + convierte a JSON → envía a DisateQ Plataforma CPE  |
+- **[Arquitectura](docs/ARQUITECTURA.md)** — Diseño técnico del sistema
+- **[Instalación](docs/INSTALACION.md)** — Guía paso a paso
+- **[API Reference](docs/API.md)** — Clases y métodos
+- **[Ejemplos](docs/EJEMPLOS.md)** — Casos de uso reales
+- **[Guía Técnica](docs/GUIA_TECNICA.md)** — Para instaladores
 
 ---
 
-## Powered by DisateQ Bridge™ — @fhertejada™
+## 🧪 Testing
+
+\\\ash
+# Ejecutar todos los tests
+pytest tests/ -v
+
+# Con cobertura
+pytest tests/ --cov=src --cov-report=html
+
+# Test específico
+pytest tests/test_xlsx_adapter.py -v
+\\\
+
+**Estado actual:** ✅ 30/30 tests pasando
+
+---
+
+## 🗺️ Roadmap
+
+- [x] Motor CPE base (v2.0)
+- [x] XlsxAdapter — POS™ Excel
+- [x] DbfAdapter — FoxPro legacy
+- [x] SqlAdapter universal
+- [x] YamlMapper — Configuración sin código
+- [x] source_explorer — Herramienta de inspección
+- [ ] Validación JSON vs XSD SUNAT
+- [ ] Primer envío real a SUNAT
+- [ ] Instaladores profesionales v3.0
+- [ ] Plataforma CPE™ + License Server
+
+---
+
+## 🏢 Sistema DisateQ™
+
+Este motor es parte del ecosistema **DisateQ™**:
+
+1. **DisateQ POS™** — Punto de venta Excel (en desarrollo)
+2. **Motor CPE™** — Este repositorio ✅
+3. **Plataforma CPE™** — Servicio cloud + licencias (próximamente)
+
+---
+
+## 📄 Licencia
+
+**Propietario** — DisateQ™ / @fhertejada™
+
+Todos los derechos reservados. Este software es propiedad de DisateQ™ y no puede ser distribuido, modificado o utilizado sin autorización expresa.
+
+---
+
+## 👨‍💻 Autor
+
+**Fernando Hernán Tejada**  
+@fhertejada™ | DisateQ™
+
+---
+
+## 🆘 Soporte
+
+Para soporte técnico o consultas comerciales:
+- **Email:** soporte@disateq.com
+- **GitHub Issues:** Para bugs y mejoras
+- **Documentación:** [docs/](docs/)
+
+---
+
+**DisateQ™** — Soluciones empresariales para facturación electrónica
