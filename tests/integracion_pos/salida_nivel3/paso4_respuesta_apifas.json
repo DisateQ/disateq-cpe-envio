@@ -1,0 +1,11 @@
+{
+  "success": true,
+  "codigo_sunat": "0",
+  "mensaje_sunat": "La Factura numero B001-00000001, ha sido aceptada",
+  "hash_cdr": "db65664f53b0a4a8415ec4e8b5e9536e",
+  "nombre_xml_cdr": "R-20123456789-03-B001-00000001.xml",
+  "fecha_respuesta": "2026-04-19T22:53:57.354035",
+  "ticket": "TICKET-1776657237-db65664f",
+  "observaciones": [],
+  "es_mock": true
+}

@@ -1,0 +1,12 @@
+{
+  "data": {
+    "client_name": "DisateQ Prueba",
+    "client_ruc": "20123456789",
+    "product": "Motor CPE DisateQ™ v3.0",
+    "issue_date": "2026-04-20T07:17:19.306830",
+    "expiry_date": "2027-04-20T07:17:19.306830",
+    "max_docs_month": 999999,
+    "version": "3.0"
+  },
+  "signature": "FBBBDSTwM/CYM0Zq1dElC7EpD3xFc/nbsOz5+7VTDXz1BvIkVoFOIVje50MuW1Z1D1/fdz96vjC+NydJolr6kz3LWuDSFF0erYrMpkp/YiKTG+Xm0Jd0Q+1Rl8G4lQS7zHAZmHWk3QK4Wp7UKT0ytRl7kXSKG+jXgi+j4RJXGXDsxCD4vAUpqXhqtYo7jK2Y+x2726c/GMNC/6JjMF/h+6lohPGhOzIW6dk2GXi9fXvtZOzc3ibqRq+f3x+0P0PG9WdNk/Xm0HLu0bvXvcN1ki6ATCrSxgVKtRVvfzFL0FP2fzMLENw4Uk3LPF6xE2LsgmQrMXsrr53D15/X1zNdNw=="
+}

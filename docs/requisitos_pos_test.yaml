@@ -1,0 +1,52 @@
+# ══════════════════════════════════════════════════════════
+# REQUISITOS PARA PRUEBAS DE INTEGRACIÓN
+# Motor CPE v3.0 ← DisateQ POS™ Excel
+# ══════════════════════════════════════════════════════════
+
+archivo_requerido:
+  nombre: ventas_test.xlsx
+  ubicacion: D:/DisateQ/test/
+  fecha_entrega: [A DEFINIR]
+
+worksheet_cpe:
+  nombre: _CPE
+  visible: xlVeryHidden
+  protegido: false  # Para pruebas
+
+# ── COMPROBANTE DE PRUEBA ────────────────────────────────
+
+comprobante:
+  tipo_doc: "03"           # Boleta
+  serie: "B001"
+  numero: 1
+  fecha_emision: "2024-04-20"  # ISO: YYYY-MM-DD
+  moneda: "PEN"
+
+cliente:
+  tipo_doc: "1"            # DNI
+  numero_doc: "12345678"
+  denominacion: "CLIENTE PRUEBA"
+  direccion: "AV TEST 123"
+
+# ── ÍTEM DE PRUEBA ───────────────────────────────────────
+
+item:
+  item_codigo: "PROD001"
+  item_descripcion: "PRODUCTO TEST"
+  item_cantidad: 2.0
+  item_unidad: "NIU"
+  item_precio_unitario: 10.00
+  item_valor_unitario: 8.47
+  item_subtotal_sin_igv: 16.95
+  item_igv: 3.05
+  item_total: 20.00
+  item_afectacion_igv: "10"
+  item_unspsc: "10000000"
+
+# ── TOTALES ──────────────────────────────────────────────
+
+totales:
+  total_gravada: 16.95
+  total_exonerada: 0.00
+  total_igv: 3.05
+  total: 20.00

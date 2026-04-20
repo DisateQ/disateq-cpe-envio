@@ -1,0 +1,17 @@
+# Motor CPE DisateQ™ v3.0 - Configuración
+
+modo: legacy
+
+fuente:
+  tipo: xlsx
+  archivo: "ventas.xlsx"
+
+envio:
+  legacy:
+    url: "https://apifas.disateq.com/produccion_text.php"
+    usuario: ""
+    token: ""
+
+logs:
+  nivel: INFO
+  archivo: "logs/motor_cpe.log"

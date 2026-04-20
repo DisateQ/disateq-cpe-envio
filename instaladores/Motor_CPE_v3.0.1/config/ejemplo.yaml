@@ -1,0 +1,16 @@
+# Configuración Motor CPE v3.0.1
+# Edita este archivo según tu sistema
+
+cliente:
+  nombre: "Mi Empresa S.A.C."
+  ruc: "20123456789"
+
+source:
+  type: excel  # excel, dbf, sql
+  path: "C:/Sistema/ventas.xlsx"
+
+envio:
+  modo: legacy
+  url: "https://apifas.disateq.com/produccion_text.php"
+
+# Para más información: docs/CONFIGURACION.md

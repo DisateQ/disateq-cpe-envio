@@ -1,0 +1,12 @@
+{
+  "data": {
+    "client_name": "Prueba Instalacion",
+    "client_ruc": "20999999999",
+    "product": "Motor CPE DisateQ™ v3.0",
+    "issue_date": "2026-04-20T08:42:54.988423",
+    "expiry_date": "2027-04-20T08:42:54.988423",
+    "max_docs_month": 999999,
+    "version": "3.0"
+  },
+  "signature": "VQdRmJzwQwynWn08x5l/7aB9lUuBR2E/+01EtmasWVXE2y9hsJsiR4IhLdSzxIkwsTduqV56yfJvUjBbt0X+1u9XgAlyAiJzbSJGvUBHtbkDDeJWOSh58lb+0Fr60Jo2B+WD+8wMoiwULWj0S3nr/4C7FQwVDntYQONFpxxfSjyoToSl9EeJ52ff/xsbS5QDfmDHA1BJCUnK52Hw6ELWr4Vv9xKgXV69lmpi31FM1wSRSN/oNGQz2d2hs0m5aZVyo4SPZ/atUVXc20OuFS7ACQ5Do+rxM4JgFJwxWjMo4Aan+4d2IUFcNdJL8buiPZHbjLf8xglDYxNg8gCyMYZFiw=="
+}

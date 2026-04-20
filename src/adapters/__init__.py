@@ -1,16 +1,11 @@
 """
 adapters/__init__.py
-====================
-Registro de adaptadores disponibles en DisateQ CPE™.
 """
 
-from adapters.base_adapter import BaseAdapter, AdapterError
-from adapters.dbf_adapter  import DBFAdapter
-from adapters.xlsx_adapter import leer as xlsx_leer
+from .base_adapter import BaseAdapter
+from .xlsx_adapter import XlsxAdapter
 
 __all__ = [
-    "BaseAdapter",
-    "AdapterError",
-    "DBFAdapter",
-    "xlsx_leer",
+    'BaseAdapter',
+    'XlsxAdapter',
 ]
