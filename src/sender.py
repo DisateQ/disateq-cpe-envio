@@ -1,134 +1,284 @@
 """
 sender.py
 =========
-Envio de comprobantes a APIFAS (API para DisateQ).
+Envío de comprobantes a APIFAS (real o mock) — Motor CPE DisateQ™ v3.0
 
-Manejo de red:
-  - Reintentos automaticos con backoff exponencial
-  - Timeout configurable
-  - Excepciones tipadas para cada tipo de fallo
+Soporta dos modos:
+- MOCK: Simulación local sin internet (para pruebas)
+- REAL: Envío real a APIFAS producción
 """
 
-import time
+import json
 import requests
-import logging
-from exceptions import ConexionError, RespuestaError
-from exceptions import TimeoutError as CPETimeoutError
-
-log = logging.getLogger(__name__)
-
-TIMEOUT        = 30    # segundos por intento
-MAX_REINTENTOS = 3     # intentos totales
-BACKOFF_BASE   = 5     # segundos de espera inicial entre reintentos
-
-_RESPUESTAS_OK = [
-    "proceso-aceptado",
-    "es un comprobante repetido",
-    "por anular",
-]
+from pathlib import Path
+from typing import Dict, Tuple
+from datetime import datetime
 
 
-def verificar_conexion(url: str) -> bool:
-    """Retorna True si APIFAS esta accesible. No lanza excepciones."""
-    try:
-        requests.get(url, timeout=5)
-        return True
-    except Exception:
-        return False
-
-
-def _es_ok(texto: str) -> bool:
-    t = texto.lower().strip()
-    return any(r in t for r in _RESPUESTAS_OK)
-
-
-def _con_reintentos(fn, nombre: str):
+class APISender:
     """
-    Ejecuta fn() con reintentos y backoff exponencial.
-    fn debe lanzar ConexionError o CPETimeoutError para reintentar.
-    RespuestaError no se reintenta — es un rechazo definitivo de APIFAS.
+    Envía archivos TXT a APIFAS (real o mock).
     """
-    ultimo_error = None
-    for intento in range(1, MAX_REINTENTOS + 1):
+    
+    def __init__(self, mode: str = "mock", url: str = None, usuario: str = None, token: str = None):
+        """
+        Inicializa sender.
+        
+        Args:
+            mode: "mock" o "real"
+            url: URL de APIFAS (solo para mode=real)
+            usuario: Usuario APIFAS (solo para mode=real)
+            token: Token APIFAS (solo para mode=real)
+        """
+        self.mode = mode.lower()
+        self.url = url
+        self.usuario = usuario
+        self.token = token
+        
+        if self.mode == "real" and not all([url, usuario, token]):
+            raise ValueError("Modo 'real' requiere url, usuario y token")
+    
+    def enviar(self, txt_filepath: str) -> Tuple[bool, Dict]:
+        """
+        Envía archivo TXT a APIFAS.
+        
+        Args:
+            txt_filepath: Ruta al archivo .txt generado
+        
+        Returns:
+            (exito, respuesta_dict)
+        """
+        if self.mode == "mock":
+            return self._enviar_mock(txt_filepath)
+        else:
+            return self._enviar_real(txt_filepath)
+    
+    def _enviar_mock(self, txt_filepath: str) -> Tuple[bool, Dict]:
+        """
+        Simula envío a APIFAS (sin conexión real).
+        
+        Genera respuesta simulada tipo CDR.
+        """
+        print(f"   📤 [MOCK] Enviando: {Path(txt_filepath).name}")
+        
+        # Leer contenido del archivo
+        with open(txt_filepath, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Extraer serie-numero del archivo
+        filename = Path(txt_filepath).stem  # B001-00000001
+        
+        # Simular respuesta exitosa
+        respuesta = {
+            "estado": "OK",
+            "codigo_respuesta": "0",
+            "mensaje": "Comprobante aceptado por SUNAT",
+            "comprobante": filename,
+            "fecha_proceso": datetime.now().isoformat(),
+            "hash_cpe": "abc123def456",
+            "cdr": {
+                "codigo_sunat": "0",
+                "descripcion_sunat": "La Factura numero F001-00000001, ha sido aceptada",
+                "notas": []
+            },
+            "modo": "MOCK"
+        }
+        
+        print(f"   ✅ [MOCK] Respuesta: {respuesta['mensaje']}")
+        
+        return True, respuesta
+    
+    def _enviar_real(self, txt_filepath: str) -> Tuple[bool, Dict]:
+        """
+        Envía archivo TXT a APIFAS producción.
+        
+        POST multipart/form-data:
+        - file: archivo .txt
+        - usuario: usuario APIFAS
+        - token: token APIFAS
+        """
+        print(f"   📤 [REAL] Enviando a: {self.url}")
+        
         try:
-            return fn()
-        except RespuestaError:
-            raise  # No reintentar rechazos definitivos
-        except (ConexionError, CPETimeoutError) as e:
-            ultimo_error = e
-            if intento < MAX_REINTENTOS:
-                espera = BACKOFF_BASE * (2 ** (intento - 1))  # 5s, 10s, 20s
-                log.warning(
-                    f"Intento {intento}/{MAX_REINTENTOS} fallido para {nombre}: {e}. "
-                    f"Reintentando en {espera}s...")
-                time.sleep(espera)
+            # Leer archivo
+            with open(txt_filepath, 'rb') as f:
+                files = {'file': (Path(txt_filepath).name, f, 'text/plain')}
+                
+                data = {
+                    'usuario': self.usuario,
+                    'token': self.token
+                }
+                
+                # Enviar POST
+                response = requests.post(
+                    self.url,
+                    files=files,
+                    data=data,
+                    timeout=30
+                )
+            
+            # Procesar respuesta
+            if response.status_code == 200:
+                try:
+                    respuesta_json = response.json()
+                    exito = respuesta_json.get('estado') == 'OK'
+                    
+                    if exito:
+                        print(f"   ✅ [REAL] {respuesta_json.get('mensaje', 'Enviado')}")
+                    else:
+                        print(f"   ❌ [REAL] {respuesta_json.get('mensaje', 'Error')}")
+                    
+                    return exito, respuesta_json
+                
+                except json.JSONDecodeError:
+                    # Respuesta no es JSON
+                    return False, {
+                        "estado": "ERROR",
+                        "mensaje": "Respuesta no válida de APIFAS",
+                        "status_code": response.status_code,
+                        "content": response.text[:200]
+                    }
             else:
-                log.error(f"Todos los reintentos agotados para {nombre}: {e}")
-    raise ultimo_error
-
-
-def enviar_txt(nombre: str, contenido: str, ruc: str, url: str) -> tuple[bool, str]:
-    """
-    Envia TXT a APIFAS con reintentos automaticos.
-    Retorna (exito, mensaje).
-    """
-    contenido_limpio = contenido.replace("\r\n", "").replace("\n", "").replace("\r", "")
-    headers = {"Texto": contenido_limpio, "Ruc": ruc, "Nombre": nombre}
-
-    def _enviar():
-        try:
-            resp = requests.post(url, headers=headers, timeout=TIMEOUT)
-        except requests.exceptions.ConnectionError:
-            raise ConexionError(url)
-        except requests.exceptions.Timeout:
-            raise CPETimeoutError(nombre, TIMEOUT)
+                return False, {
+                    "estado": "ERROR",
+                    "mensaje": f"HTTP {response.status_code}",
+                    "status_code": response.status_code
+                }
+        
+        except requests.Timeout:
+            return False, {
+                "estado": "ERROR",
+                "mensaje": "Timeout al conectar con APIFAS"
+            }
+        
+        except requests.ConnectionError:
+            return False, {
+                "estado": "ERROR",
+                "mensaje": "No se pudo conectar con APIFAS"
+            }
+        
         except Exception as e:
-            raise ConexionError(url) from e
-
-        msg = resp.text.strip() if resp.text else ""
-        if resp.status_code == 200 and _es_ok(msg):
-            return True, msg
-        raise RespuestaError(nombre, msg or f"HTTP {resp.status_code}")
-
-    try:
-        return _con_reintentos(_enviar, nombre)
-    except RespuestaError as e:
-        return False, e.respuesta
-    except (ConexionError, CPETimeoutError) as e:
-        return False, str(e)
+            return False, {
+                "estado": "ERROR",
+                "mensaje": f"Error inesperado: {str(e)}"
+            }
 
 
-def enviar_json(payload: dict, ruc: str, url: str, api_key: str = "") -> tuple[bool, str]:
+class CDRProcessor:
     """
-    Envia JSON a APIFAS con reintentos automaticos.
-    Retorna (exito, mensaje).
+    Procesa respuestas CDR de SUNAT.
     """
-    headers = {"Content-Type": "application/json", "Ruc": ruc}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
+    
+    @staticmethod
+    def procesar(respuesta: Dict, cpe: Dict) -> Dict:
+        """
+        Procesa respuesta CDR y retorna información estructurada.
+        
+        Args:
+            respuesta: Dict de respuesta de APIFAS
+            cpe: Comprobante original normalizado
+        
+        Returns:
+            Dict con información procesada del CDR
+        """
+        resultado = {
+            'comprobante': f"{cpe['serie']}-{cpe['numero']:08d}",
+            'fecha_proceso': respuesta.get('fecha_proceso', datetime.now().isoformat()),
+            'estado_apifas': respuesta.get('estado', 'DESCONOCIDO'),
+            'mensaje_apifas': respuesta.get('mensaje', ''),
+            'hash_cpe': respuesta.get('hash_cpe', ''),
+        }
+        
+        # Procesar CDR de SUNAT si existe
+        if 'cdr' in respuesta:
+            cdr = respuesta['cdr']
+            resultado['codigo_sunat'] = cdr.get('codigo_sunat', '')
+            resultado['descripcion_sunat'] = cdr.get('descripcion_sunat', '')
+            resultado['notas_sunat'] = cdr.get('notas', [])
+            
+            # Determinar si fue aceptado por SUNAT
+            codigo = str(cdr.get('codigo_sunat', ''))
+            resultado['aceptado_sunat'] = codigo == '0'
+        else:
+            resultado['codigo_sunat'] = ''
+            resultado['descripcion_sunat'] = ''
+            resultado['notas_sunat'] = []
+            resultado['aceptado_sunat'] = False
+        
+        return resultado
+    
+    @staticmethod
+    def guardar_cdr(cdr_info: Dict, output_dir: str = "output/cdr"):
+        """
+        Guarda información del CDR en archivo JSON.
+        
+        Args:
+            cdr_info: Dict con información del CDR procesado
+            output_dir: Directorio donde guardar
+        """
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        
+        filename = f"{cdr_info['comprobante']}_CDR.json"
+        filepath = output_path / filename
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(cdr_info, f, indent=2, ensure_ascii=False)
+        
+        return str(filepath)
 
-    def _enviar():
-        try:
-            resp = requests.post(url, json=payload, headers=headers, timeout=TIMEOUT)
-        except requests.exceptions.ConnectionError:
-            raise ConexionError(url)
-        except requests.exceptions.Timeout:
-            raise CPETimeoutError("json", TIMEOUT)
-        except Exception as e:
-            raise ConexionError(url) from e
 
-        if resp.status_code in (200, 201):
-            try:
-                data = resp.json()
-                msg  = data.get("mensaje", data.get("message", resp.text[:100]))
-            except Exception:
-                msg = resp.text[:100]
-            return True, msg
-        raise RespuestaError("json", f"HTTP {resp.status_code}: {resp.text[:100]}")
+# ========================================
+# CLI
+# ========================================
 
+def main():
+    """CLI para enviar TXT a APIFAS"""
+    import argparse
+    
+    parser = argparse.ArgumentParser(
+        description="Envío de TXT a APIFAS (mock o real)"
+    )
+    parser.add_argument('txt_file', help='Archivo TXT a enviar')
+    parser.add_argument('--mode', choices=['mock', 'real'], default='mock',
+                        help='Modo de envío (default: mock)')
+    parser.add_argument('--url', help='URL APIFAS (modo real)')
+    parser.add_argument('--usuario', help='Usuario APIFAS (modo real)')
+    parser.add_argument('--token', help='Token APIFAS (modo real)')
+    
+    args = parser.parse_args()
+    
     try:
-        return _con_reintentos(_enviar, "json")
-    except RespuestaError as e:
-        return False, e.respuesta
-    except (ConexionError, CPETimeoutError) as e:
-        return False, str(e)
+        # Crear sender
+        sender = APISender(
+            mode=args.mode,
+            url=args.url,
+            usuario=args.usuario,
+            token=args.token
+        )
+        
+        # Enviar
+        print(f"\n📤 Enviando comprobante...\n")
+        exito, respuesta = sender.enviar(args.txt_file)
+        
+        # Mostrar resultado
+        print(f"\n{'='*60}")
+        if exito:
+            print("✅ ENVÍO EXITOSO")
+        else:
+            print("❌ ENVÍO FALLIDO")
+        print(f"{'='*60}\n")
+        
+        print(json.dumps(respuesta, indent=2, ensure_ascii=False))
+        print()
+        
+        return 0 if exito else 1
+    
+    except Exception as e:
+        print(f"\n❌ Error: {e}\n")
+        return 1
+
+
+if __name__ == '__main__':
+    import sys
+    sys.exit(main())

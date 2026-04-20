@@ -1,0 +1,11 @@
+{
+  "comprobante": "B001-00000001",
+  "fecha_proceso": "2026-04-20T09:21:15.513303",
+  "estado_apifas": "OK",
+  "mensaje_apifas": "Comprobante aceptado por SUNAT",
+  "hash_cpe": "abc123def456",
+  "codigo_sunat": "0",
+  "descripcion_sunat": "La Factura numero F001-00000001, ha sido aceptada",
+  "notas_sunat": [],
+  "aceptado_sunat": true
+}
